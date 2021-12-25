@@ -1,0 +1,5 @@
+.idea/*
+os/target/*
+os/.idea/*
+Cargo.lock
+*.img

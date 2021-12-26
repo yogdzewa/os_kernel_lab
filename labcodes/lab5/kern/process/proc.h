@@ -19,7 +19,7 @@ enum proc_state {
 // Don't need to save all the %fs etc. segment registers,
 // because they are constant across kernel contexts.
 // Save all the regular registers so we don't need to care
-// which are caller save, but not the return register %eax.
+// which are callee-saved, but not the return register %eax.
 // (Not saving %eax just simplifies the switching code.)
 // The layout of context must match code in switch.S.
 struct context {

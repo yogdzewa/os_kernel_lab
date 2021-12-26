@@ -26,7 +26,7 @@ schedule(void) {
     bool intr_flag;
     list_entry_t *le, *last;
     struct proc_struct *next = NULL;
-    local_intr_save(intr_flag);
+    local_intr_save(intr_flag);	//inhibit interrupt
     {
         current->need_resched = 0;
         last = (current == idleproc) ? &proc_list : &(current->list_link);

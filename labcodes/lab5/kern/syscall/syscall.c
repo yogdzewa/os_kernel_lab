@@ -64,7 +64,7 @@ sys_pgdir(uint32_t arg[]) {
     return 0;
 }
 
-static int (*syscalls[])(uint32_t arg[]) = {
+static int (*syscalls[])(uint32_t arg[]) = { 	//funtion ptr array
     [SYS_exit]              sys_exit,
     [SYS_fork]              sys_fork,
     [SYS_wait]              sys_wait,
@@ -90,7 +90,7 @@ syscall(void) {
             arg[2] = tf->tf_regs.reg_ebx;
             arg[3] = tf->tf_regs.reg_edi;
             arg[4] = tf->tf_regs.reg_esi;
-            tf->tf_regs.reg_eax = syscalls[num](arg);
+            tf->tf_regs.reg_eax = syscalls[num](arg);	//`syscalls[num]` is function ptr, and `(arg)` is argument
             return ;
         }
     }

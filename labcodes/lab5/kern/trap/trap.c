@@ -1,25 +1,26 @@
-#include <defs.h>
-#include <mmu.h>
-#include <memlayout.h>
-#include <clock.h>
-#include <trap.h>
-#include <x86.h>
-#include <stdio.h>
 #include <assert.h>
+#include <clock.h>
 #include <console.h>
-#include <vmm.h>
-#include <swap.h>
-#include <kdebug.h>
-#include <unistd.h>
-#include <syscall.h>
+#include <defs.h>
 #include <error.h>
+#include <kdebug.h>
+#include <memlayout.h>
+#include <mmu.h>
 #include <sched.h>
+#include <stdio.h>
+#include <swap.h>
 #include <sync.h>
+#include <syscall.h>
+#include <trap.h>
+#include <unistd.h>
+#include <vmm.h>
+#include <x86.h>
 
 #define TICK_NUM 100
 
-static void print_ticks() {
-    cprintf("%d ticks\n",TICK_NUM);
+static void
+print_ticks() {
+    cprintf("%d ticks\n", TICK_NUM);
 #ifdef DEBUG_GRADE
     cprintf("End of Test.\n");
     panic("EOT: kernel seems ok.");
@@ -35,14 +36,13 @@ static void print_ticks() {
 static struct gatedesc idt[256] = {{0}};
 
 static struct pseudodesc idt_pd = {
-    sizeof(idt) - 1, (uintptr_t)idt
-};
+    sizeof(idt) - 1, (uintptr_t)idt};
 
 /* idt_init - initialize IDT to each of the entry points in kern/trap/vectors.S */
 void
 idt_init(void) {
-     /* LAB1 YOUR CODE : STEP 2 */
-     /* (1) Where are the entry addrs of each Interrupt Service Routine (ISR)?
+    /* LAB1 YOUR CODE : STEP 2 */
+    /* (1) Where are the entry addrs of each Interrupt Service Routine (ISR)?
       *     All ISR's entry addrs are stored in __vectors. where is uintptr_t __vectors[] ?
       *     __vectors[] is in kern/trap/vector.S which is produced by tools/vector.c
       *     (try "make" command in lab1, then you will find vector.S in kern/trap DIR)
@@ -53,23 +53,22 @@ idt_init(void) {
       *     You don't know the meaning of this instruction? just google it! and check the libs/x86.h to know more.
       *     Notice: the argument of lidt is idt_pd. try to find it!
       */
-     /* LAB5 YOUR CODE */ 
-     //you should update your lab1 code (just add ONE or TWO lines of code), let user app to use syscall to get the service of ucore
-     //so you should setup the syscall interrupt gate in here
-     extern uintptr_t __vectors[];
-     int i;
-     for (i = 0; i < sizeof(idt) / sizeof(struct gatedesc); i++) 
-     {
-         SETGATE(idt[i], 0, GD_KTEXT, __vectors[i], DPL_KERNEL);
-         
-     }
-     SETGATE(idt[T_SWITCH_TOK], 0, GD_KTEXT, __vectors[T_SWITCH_TOK], DPL_USER);
-     lidt(&idt_pd);
+    /* LAB5 YOUR CODE */
+    //you should update your lab1 code (just add ONE or TWO lines of code), let user app to use syscall to get the service of ucore
+    //so you should setup the syscall interrupt gate in here
+    extern uintptr_t __vectors[];
+    int i;
+    for (i = 0; i < sizeof(idt) / sizeof(struct gatedesc); i++) {
+        SETGATE(idt[i], 0, GD_KTEXT, __vectors[i], DPL_KERNEL);
+    }
+    SETGATE(idt[T_SWITCH_TOK], 0, GD_KTEXT, __vectors[T_SWITCH_TOK], DPL_USER);
+    SETGATE(idt[SYS_CALL], 0, GD_KTEXT, __vectors[SYS_CALL], DPL_USER);
+    lidt(&idt_pd);
 }
 
 static const char *
 trapname(int trapno) {
-    static const char * const excnames[] = {
+    static const char *const excnames[] = {
         "Divide error",
         "Debug",
         "Non-Maskable Interrupt",
@@ -89,10 +88,9 @@ trapname(int trapno) {
         "x87 FPU Floating-Point Error",
         "Alignment Check",
         "Machine-Check",
-        "SIMD Floating-Point Exception"
-    };
+        "SIMD Floating-Point Exception"};
 
-    if (trapno < sizeof(excnames)/sizeof(const char * const)) {
+    if (trapno < sizeof(excnames) / sizeof(const char *const)) {
         return excnames[trapno];
     }
     if (trapno >= IRQ_OFFSET && trapno < IRQ_OFFSET + 16) {
@@ -108,9 +106,30 @@ trap_in_kernel(struct trapframe *tf) {
 }
 
 static const char *IA32flags[] = {
-    "CF", NULL, "PF", NULL, "AF", NULL, "ZF", "SF",
-    "TF", "IF", "DF", "OF", NULL, NULL, "NT", NULL,
-    "RF", "VM", "AC", "VIF", "VIP", "ID", NULL, NULL,
+    "CF",
+    NULL,
+    "PF",
+    NULL,
+    "AF",
+    NULL,
+    "ZF",
+    "SF",
+    "TF",
+    "IF",
+    "DF",
+    "OF",
+    NULL,
+    NULL,
+    "NT",
+    NULL,
+    "RF",
+    "VM",
+    "AC",
+    "VIF",
+    "VIP",
+    "ID",
+    NULL,
+    NULL,
 };
 
 void
@@ -128,7 +147,7 @@ print_trapframe(struct trapframe *tf) {
     cprintf("  flag 0x%08x ", tf->tf_eflags);
 
     int i, j;
-    for (i = 0, j = 1; i < sizeof(IA32flags) / sizeof(IA32flags[0]); i ++, j <<= 1) {
+    for (i = 0, j = 1; i < sizeof(IA32flags) / sizeof(IA32flags[0]); i++, j <<= 1) {
         if ((tf->tf_eflags & j) && IA32flags[i] != NULL) {
             cprintf("%s,", IA32flags[i]);
         }
@@ -169,15 +188,14 @@ print_pgfault(struct trapframe *tf) {
 static int
 pgfault_handler(struct trapframe *tf) {
     extern struct mm_struct *check_mm_struct;
-    if(check_mm_struct !=NULL) { //used for test check_swap
-            print_pgfault(tf);
-        }
+    if (check_mm_struct != NULL) {  //used for test check_swap
+        print_pgfault(tf);
+    }
     struct mm_struct *mm;
     if (check_mm_struct != NULL) {
         assert(current == idleproc);
         mm = check_mm_struct;
-    }
-    else {
+    } else {
         if (current == NULL) {
             print_trapframe(tf);
             print_pgfault(tf);
@@ -195,75 +213,73 @@ static void
 trap_dispatch(struct trapframe *tf) {
     char c;
 
-    int ret=0;
+    int ret = 0;
 
     switch (tf->tf_trapno) {
-    case T_PGFLT:  //page fault
-        if ((ret = pgfault_handler(tf)) != 0) {
-            print_trapframe(tf);
-            if (current == NULL) {
-                panic("handle pgfault failed. ret=%d\n", ret);
-            }
-            else {
-                if (trap_in_kernel(tf)) {
-                    panic("handle pgfault failed in kernel mode. ret=%d\n", ret);
+        case T_PGFLT:  //page fault
+            if ((ret = pgfault_handler(tf)) != 0) {
+                print_trapframe(tf);
+                if (current == NULL) {
+                    panic("handle pgfault failed. ret=%d\n", ret);
+                } else {
+                    if (trap_in_kernel(tf)) {
+                        panic("handle pgfault failed in kernel mode. ret=%d\n", ret);
+                    }
+                    cprintf("killed by kernel.\n");
+                    panic("handle user mode pgfault failed. ret=%d\n", ret);
+                    do_exit(-E_KILLED);
                 }
-                cprintf("killed by kernel.\n");
-                panic("handle user mode pgfault failed. ret=%d\n", ret); 
-                do_exit(-E_KILLED);
             }
-        }
-        break;
-    case T_SYSCALL:
-        syscall();
-        break;
-    case IRQ_OFFSET + IRQ_TIMER:
+            break;
+        case T_SYSCALL:
+            syscall();
+            break;
+        case IRQ_OFFSET + IRQ_TIMER:
 #if 0
     LAB3 : If some page replacement algorithm(such as CLOCK PRA) need tick to change the priority of pages,
-    then you can add code here. 
+    then you can add code here.
 #endif
-        /* LAB1 YOUR CODE : STEP 3 */
-        /* handle the timer interrupt */
-        /* (1) After a timer interrupt, you should record this event using a global variable (increase it), such as ticks in kern/driver/clock.c
+            /* LAB1 YOUR CODE : STEP 3 */
+            /* handle the timer interrupt */
+            /* (1) After a timer interrupt, you should record this event using a global variable (increase it), such as ticks in kern/driver/clock.c
          * (2) Every TICK_NUM cycle, you can print some info using a funciton, such as print_ticks().
          * (3) Too Simple? Yes, I think so!
          */
-        /* LAB5 YOUR CODE */
-        /* you should upate you lab1 code (just add ONE or TWO lines of code):
+            /* LAB5 YOUR CODE */
+            /* you should upate you lab1 code (just add ONE or TWO lines of code):
          *    Every TICK_NUM cycle, you should set current process's current->need_resched = 1
          */
-        ticks++;
-        if (ticks % TICK_NUM == 0)
-        {
-            print_ticks();
-        }
-        break;
-    case IRQ_OFFSET + IRQ_COM1:
-        c = cons_getc();
-        cprintf("serial [%03d] %c\n", c, c);
-        break;
-    case IRQ_OFFSET + IRQ_KBD:
-        c = cons_getc();
-        cprintf("kbd [%03d] %c\n", c, c);
-        break;
-    //LAB1 CHALLENGE 1 : YOUR CODE you should modify below codes.
-    case T_SWITCH_TOU:
-    case T_SWITCH_TOK:
-        panic("T_SWITCH_** ??\n");
-        break;
-    case IRQ_OFFSET + IRQ_IDE1:
-    case IRQ_OFFSET + IRQ_IDE2:
-        /* do nothing */
-        break;
-    default:
-        print_trapframe(tf);
-        if (current != NULL) {
-            cprintf("unhandled trap.\n");
-            do_exit(-E_KILLED);
-        }
-        // in kernel, it must be a mistake
-        panic("unexpected trap in kernel.\n");
-
+            ticks++;
+            if (ticks % TICK_NUM == 0) {
+                print_ticks();
+                current->need_resched = 1;
+            }
+            break;
+        case IRQ_OFFSET + IRQ_COM1:
+            c = cons_getc();
+            cprintf("serial [%03d] %c\n", c, c);
+            break;
+        case IRQ_OFFSET + IRQ_KBD:
+            c = cons_getc();
+            cprintf("kbd [%03d] %c\n", c, c);
+            break;
+        //LAB1 CHALLENGE 1 : YOUR CODE you should modify below codes.
+        case T_SWITCH_TOU:
+        case T_SWITCH_TOK:
+            panic("T_SWITCH_** ??\n");
+            break;
+        case IRQ_OFFSET + IRQ_IDE1:
+        case IRQ_OFFSET + IRQ_IDE2:
+            /* do nothing */
+            break;
+        default:
+            print_trapframe(tf);
+            if (current != NULL) {
+                cprintf("unhandled trap.\n");
+                do_exit(-E_KILLED);
+            }
+            // in kernel, it must be a mistake
+            panic("unexpected trap in kernel.\n");
     }
 }
 
@@ -278,16 +294,15 @@ trap(struct trapframe *tf) {
     // used for previous projects
     if (current == NULL) {
         trap_dispatch(tf);
-    }
-    else {
+    } else {
         // keep a trapframe chain in stack
         struct trapframe *otf = current->tf;
         current->tf = tf;
-    
+
         bool in_kernel = trap_in_kernel(tf);
-    
+
         trap_dispatch(tf);
-    
+
         current->tf = otf;
         if (!in_kernel) {
             if (current->flags & PF_EXITING) {
@@ -299,4 +314,3 @@ trap(struct trapframe *tf) {
         }
     }
 }
-

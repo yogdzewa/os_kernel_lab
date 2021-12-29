@@ -227,12 +227,14 @@ page_init(void) {
     extern char end[];
 
     npage = maxpa / PGSIZE;
+    // the start of these pages
     pages = (struct Page *)ROUNDUP((void *)end, PGSIZE);
 
     for (i = 0; i < npage; i++) {
         SetPageReserved(pages + i);
     }
 
+    //the start of free memory
     uintptr_t freemem = PADDR((uintptr_t)pages + sizeof(struct Page) * npage);
 
     for (i = 0; i < memmap->nr_map; i++) {
@@ -247,7 +249,7 @@ page_init(void) {
                 end = KMEMSIZE;
             }
             // correct the boundary and call init_memmap(), that is to say,
-            // the default_init_memmap(), whose args are block_size and PageNum
+            // the default_init_memmap(), whose args are block_size and PageNum.
             // only the blocks over the freemem can be init
             if (begin < end) {
                 begin = ROUNDUP(begin, PGSIZE);
@@ -489,8 +491,10 @@ copy_range(pde_t *to, pde_t *from, uintptr_t start, uintptr_t end, bool share) {
     // copy content by page unit.
     do {
         //call get_pte to find process A's pte according to the addr start
-        pte_t *ptep = get_pte(from, start, 0), *nptep;
+        pte_t *ptep = get_pte(from, start, 0), *nptep;  // nptep for new page table entry pointer
         if (ptep == NULL) {
+            // why would this happen?
+            // PTSIZE : bytes mapped by a page directory entry
             start = ROUNDDOWN(start + PTSIZE, PTSIZE);
             continue;
         }
@@ -521,6 +525,11 @@ copy_range(pde_t *to, pde_t *from, uintptr_t start, uintptr_t end, bool share) {
          * (3) memory copy from src_kvaddr to dst_kvaddr, size is PGSIZE
          * (4) build the map of phy addr of  nage with the linear addr start
          */
+            uintptr_t src_kvaddr, dst_kvaddr;
+            src_kvaddr = page2kva(page);
+            dst_kvaddr = page2kva(npage);
+            memcpy(dst_kvaddr, src_kvaddr, PGSIZE);
+            ret = page_insert(to, npage, start, perm);
             assert(ret == 0);
         }
         start += PGSIZE;
@@ -552,12 +561,12 @@ page_insert(pde_t *pgdir, struct Page *page, uintptr_t la, uint32_t perm) {
         return -E_NO_MEM;
     }
     page_ref_inc(page);
-    if (*ptep & PTE_P) {
+    if (*ptep & PTE_P) {  //the pte is not empty
         struct Page *p = pte2page(*ptep);
         if (p == page) {
             page_ref_dec(page);  // used to modify the pages permission(?)
         } else {
-            page_remove_pte(pgdir, la, ptep);
+            page_remove_pte(pgdir, la, ptep);  // if not equal, pte need to be cleaned
         }
     }
     *ptep = page2pa(page) | PTE_P | perm;
@@ -586,7 +595,7 @@ pgdir_alloc_page(pde_t *pgdir, uintptr_t la, uint32_t perm) {
             return NULL;
         }
         if (swap_init_ok) {
-            if (check_mm_struct != NULL) {//这个really has been modified? only add this condition judgement
+            if (check_mm_struct != NULL) {  //这个really has been modified? only add this condition judgement
                 swap_map_swappable(check_mm_struct, la, page, 0);
                 page->pra_vaddr = la;
                 assert(page_ref(page) == 1);

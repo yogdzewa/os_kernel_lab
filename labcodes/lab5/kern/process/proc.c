@@ -356,9 +356,9 @@ static void
 copy_thread(struct proc_struct *proc, uintptr_t esp, struct trapframe *tf) {
     proc->tf = (struct trapframe *)(proc->kstack + KSTACKSIZE) - 1;
     *(proc->tf) = *tf;
-    proc->tf->tf_regs.reg_eax = 0;
-    proc->tf->tf_esp = esp;
-    proc->tf->tf_eflags |= FL_IF;
+    proc->tf->tf_regs.reg_eax = 0;	//setup child's return value
+    proc->tf->tf_esp = esp;		//setup child's user stack
+    proc->tf->tf_eflags |= FL_IF;	//enalbe interrupt
 
     proc->context.eip = (uintptr_t)forkret;
     proc->context.esp = (uintptr_t)(proc->tf);
@@ -648,7 +648,7 @@ load_icode(unsigned char *binary, size_t size) {
     tf->tf_ds = tf->tf_es = tf->tf_fs = tf->tf_ss = USER_DS;
     tf->tf_esp = USTACKTOP;
     tf->tf_eflags |= FL_IF;
-    tf->tf_eip= elf->e_entry;
+    tf->tf_eip = elf->e_entry;
     ret = 0;
 out:
     return ret;
@@ -706,7 +706,7 @@ do_yield(void) {
     return 0;
 }
 
-// do_wait - wait one OR any children with PROC_ZOMBIE state, and free memory space of kernel stack
+// do_wait - wait one OR any children to become PROC_ZOMBIE state, and free memory space of kernel stack
 //         - proc struct of this child.
 // NOTE: only after do_wait function, all resources of the child proces are free.
 int

@@ -4,7 +4,7 @@ switch_to:                      # switch_to(from, to)
 
     # save from's registers
     movl 4(%esp), %eax          # eax points to from
-    popl 0(%eax)                # save eip !popl
+    popl 0(%eax)                # save eip by popl
     movl %esp, 4(%eax)
     movl %ebx, 8(%eax)
     movl %ecx, 12(%eax)

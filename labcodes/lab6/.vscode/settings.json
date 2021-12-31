@@ -1,0 +1,4 @@
+{
+    "C_Cpp.default.compilerPath": "E:\\mingw-w64\\mingw64\\bin\\gcc",
+    "C_Cpp.clang_format_style": "{ BasedOnStyle: Chromium, IndentWidth: 4, ColumnLimit: 0, PointerAlignment: Right, AlwaysBreakAfterReturnType: All}"
+}

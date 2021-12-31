@@ -1,0 +1,2209 @@
+diff '--color=auto' -urP lab5_origin/kern/debug/kdebug.c lab5/kern/debug/kdebug.c
+--- lab5_origin/kern/debug/kdebug.c	2021-02-07 16:11:21.000000000 +0800
++++ lab5/kern/debug/kdebug.c	2021-12-26 14:50:28.000000000 +0800
+@@ -347,5 +347,22 @@
+       *           NOTICE: the calling funciton's return addr eip  = ss:[ebp+4]
+       *                   the calling funciton's ebp = ss:[ebp]
+       */
++    uint32_t eip, ebp;
++    eip = read_eip();
++    ebp = read_ebp();
++    int i, j;
++    for (i = 0; ebp != 0 && i < STACKFRAME_DEPTH; i++)
++    {
++        cprintf("ebp:0x%08x eip:0x%08x args:", ebp, eip);
++        for (j = 0; j < 4; j++)
++        {
++            cprintf("0x%08x ", ((uint32_t *)ebp + 2)[j]);
++        }
++        cprintf("\n");
++        print_debuginfo(eip - 1);
++        eip = ((uint32_t *)ebp)[1];
++        ebp = ((uint32_t *)ebp)[0];
++    }
++	cprintf("What the fuck?");
+ }
+ 
+diff '--color=auto' -urP lab5_origin/kern/mm/default_pmm.c lab5/kern/mm/default_pmm.c
+--- lab5_origin/kern/mm/default_pmm.c	2021-02-07 16:11:21.000000000 +0800
++++ lab5/kern/mm/default_pmm.c	2021-12-30 21:43:23.000000000 +0800
+@@ -1,7 +1,7 @@
+-#include <pmm.h>
++#include <default_pmm.h>
+ #include <list.h>
++#include <pmm.h>
+ #include <string.h>
+-#include <default_pmm.h>
+ 
+ /*  In the First Fit algorithm, the allocator keeps a list of free blocks
+  * (known as the free list). Once receiving a allocation request for memory,
+@@ -18,7 +18,7 @@
+ /*
+  * Details of FFMA
+  * (1) Preparation:
+- *  In order to implement the First-Fit Memory Allocation (FFMA), we should
++ *  In order to implement the *First-Fit Memory Allocation (FFMA)*, we should
+  * manage the free memory blocks using a list. The struct `free_area_t` is used
+  * for the management of free memory blocks.
+  *  First, you should get familiar with the struct `list` in list.h. Struct
+@@ -95,8 +95,10 @@
+  */
+ free_area_t free_area;
+ 
+-#define free_list (free_area.free_list)
++#define free_list (free_area.free_list)  //
+ #define nr_free (free_area.nr_free)
++static void
++test(void);
+ 
+ static void
+ default_init(void) {
+@@ -108,7 +110,7 @@
+ default_init_memmap(struct Page *base, size_t n) {
+     assert(n > 0);
+     struct Page *p = base;
+-    for (; p != base + n; p ++) {
++    for (; p != base + n; p++) {
+         assert(PageReserved(p));
+         p->flags = p->property = 0;
+         set_page_ref(p, 0);
+@@ -116,7 +118,7 @@
+     base->property = n;
+     SetPageProperty(base);
+     nr_free += n;
+-    list_add(&free_list, &(base->page_link));
++    list_add_before(&free_list, &(base->page_link));
+ }
+ 
+ static struct Page *
+@@ -135,12 +137,16 @@
+         }
+     }
+     if (page != NULL) {
+-        list_del(&(page->page_link));
+         if (page->property > n) {
+             struct Page *p = page + n;
+             p->property = page->property - n;
+-            list_add(&free_list, &(p->page_link));
+-    }
++            list_add_after(&(page->page_link), &(p->page_link));
++            //---------------------------------
++            PageReserved(page);
++            SetPageProperty(p);
++            //---------------------------------
++        }
++        list_del(&(page->page_link));
+         nr_free -= n;
+         ClearPageProperty(page);
+     }
+@@ -151,31 +157,37 @@
+ default_free_pages(struct Page *base, size_t n) {
+     assert(n > 0);
+     struct Page *p = base;
+-    for (; p != base + n; p ++) {
++    for (; p != base + n; p++) {
+         assert(!PageReserved(p) && !PageProperty(p));
+         p->flags = 0;
+         set_page_ref(p, 0);
+     }
+     base->property = n;
+     SetPageProperty(base);
+-    list_entry_t *le = list_next(&free_list);
++    list_entry_t *le = list_next(&free_list), *sp = NULL;
++    bool flag = 0;
+     while (le != &free_list) {
++        // sp = le;
+         p = le2page(le, page_link);
+-        le = list_next(le);
+         if (base + base->property == p) {
+             base->property += p->property;
+             ClearPageProperty(p);
+             list_del(&(p->page_link));
+-        }
+-        else if (p + p->property == base) {
++        } else if (p + p->property == base) {
+             p->property += base->property;
++            sp = list_prev(le);
++            flag = 1;
+             ClearPageProperty(base);
+             base = p;
+             list_del(&(p->page_link));
+         }
++        if (p + p->property < base)
++            sp = le, flag = 1;
++        le = list_next(le);
+     }
+     nr_free += n;
+-    list_add(&free_list, &(base->page_link));
++    //cprintf("%x %x\n", sp, &free_list);
++    list_add((flag ? sp : &free_list), &(base->page_link));
+ }
+ 
+ static size_t
+@@ -234,7 +246,7 @@
+     free_page(p2);
+ }
+ 
+-// LAB2: below code is used to check the first fit allocation algorithm (your EXERCISE 1) 
++// LAB2: below code is used to check the first fit allocation algorithm (your EXERCISE 1)
+ // NOTICE: You SHOULD NOT CHANGE basic_check, default_check functions!
+ static void
+ default_check(void) {
+@@ -243,7 +255,7 @@
+     while ((le = list_next(le)) != &free_list) {
+         struct Page *p = le2page(le, page_link);
+         assert(PageProperty(p));
+-        count ++, total += p->property;
++        count++, total += p->property;
+     }
+     assert(total == nr_free_pages());
+ 
+@@ -253,6 +265,7 @@
+     assert(p0 != NULL);
+     assert(!PageProperty(p0));
+ 
++    // simualte the situation that all memory is used
+     list_entry_t free_list_store = free_list;
+     list_init(&free_list);
+     assert(list_empty(&free_list));
+@@ -260,6 +273,7 @@
+ 
+     unsigned int nr_free_store = nr_free;
+     nr_free = 0;
++    //--------------------------------------
+ 
+     free_pages(p0 + 2, 3);
+     assert(alloc_pages(4) == NULL);
+@@ -274,14 +288,16 @@
+     assert(PageProperty(p0) && p0->property == 1);
+     assert(PageProperty(p1) && p1->property == 3);
+ 
+-    assert((p0 = alloc_page()) == p2 - 1);
++    assert((p0 = alloc_page()) == p2 - 1);  //!
+     free_page(p0);
+     assert((p0 = alloc_pages(2)) == p2 + 1);
+ 
+     free_pages(p0, 2);
++    //test();
+     free_page(p2);
++    //test();
+ 
+-    assert((p0 = alloc_pages(5)) != NULL);
++    assert((p0 = alloc_pages(5)) != NULL);  //!
+     assert(alloc_page() == NULL);
+ 
+     assert(nr_free == 0);
+@@ -292,8 +308,9 @@
+ 
+     le = &free_list;
+     while ((le = list_next(le)) != &free_list) {
++        assert(le->next->prev == le && le->prev->next == le);
+         struct Page *p = le2page(le, page_link);
+-        count --, total -= p->property;
++        count--, total -= p->property;
+     }
+     assert(count == 0);
+     assert(total == 0);
+@@ -309,3 +326,12 @@
+     .check = default_check,
+ };
+ 
++static void
++test(void) {  //我自己写的
++    list_entry_t *le = list_next(&free_list);
++    while (le != &free_list) {
++        cprintf("%x %d  ", le2page(le, page_link), le2page(le, page_link)->property);
++        le = list_next(le);
++    }
++    cprintf("\n");
++}
+diff '--color=auto' -urP lab5_origin/kern/mm/memlayout.h lab5/kern/mm/memlayout.h
+--- lab5_origin/kern/mm/memlayout.h	2021-02-07 16:11:21.000000000 +0800
++++ lab5/kern/mm/memlayout.h	2021-12-28 10:51:02.000000000 +0800
+@@ -68,7 +68,7 @@
+ 
+ /* All physical memory mapped at this address */
+ #define KERNBASE            0xC0000000
+-#define KMEMSIZE            0x38000000                  // the maximum amount of physical memory
++#define KMEMSIZE            0x38000000                  // the maximum amount of physical memory, 896MB
+ #define KERNTOP             (KERNBASE + KMEMSIZE)
+ 
+ /* *
+diff '--color=auto' -urP lab5_origin/kern/mm/pmm.c lab5/kern/mm/pmm.c
+--- lab5_origin/kern/mm/pmm.c	2021-02-07 16:11:21.000000000 +0800
++++ lab5/kern/mm/pmm.c	2021-12-30 21:52:02.000000000 +0800
+@@ -1,16 +1,16 @@
++#include <default_pmm.h>
+ #include <defs.h>
+-#include <x86.h>
+-#include <stdio.h>
+-#include <string.h>
+-#include <mmu.h>
++#include <error.h>
++#include <kmalloc.h>
+ #include <memlayout.h>
++#include <mmu.h>
+ #include <pmm.h>
+-#include <default_pmm.h>
+-#include <sync.h>
+-#include <error.h>
++#include <stdio.h>
++#include <string.h>
+ #include <swap.h>
++#include <sync.h>
+ #include <vmm.h>
+-#include <kmalloc.h>
++#include <x86.h>
+ 
+ /* *
+  * Task State Segment:
+@@ -61,8 +61,8 @@
+  * always available at virtual address PGADDR(PDX(VPT), PDX(VPT), 0), to which
+  * vpd is set bellow.
+  * */
+-pte_t * const vpt = (pte_t *)VPT;
+-pde_t * const vpd = (pde_t *)PGADDR(PDX(VPT), PDX(VPT), 0);
++pte_t *const vpt = (pte_t *)VPT;
++pde_t *const vpd = (pde_t *)PGADDR(PDX(VPT), PDX(VPT), 0);
+ 
+ /* *
+  * Global Descriptor Table:
+@@ -83,16 +83,18 @@
+     [SEG_KDATA] = SEG(STA_W, 0x0, 0xFFFFFFFF, DPL_KERNEL),
+     [SEG_UTEXT] = SEG(STA_X | STA_R, 0x0, 0xFFFFFFFF, DPL_USER),
+     [SEG_UDATA] = SEG(STA_W, 0x0, 0xFFFFFFFF, DPL_USER),
+-    [SEG_TSS]   = SEG_NULL,
++    [SEG_TSS] = SEG_NULL,
+ };
+ 
+ static struct pseudodesc gdt_pd = {
+-    sizeof(gdt) - 1, (uintptr_t)gdt
+-};
++    sizeof(gdt) - 1, (uintptr_t)gdt};
+ 
+-static void check_alloc_page(void);
+-static void check_pgdir(void);
+-static void check_boot_pgdir(void);
++static void
++check_alloc_page(void);
++static void
++check_pgdir(void);
++static void
++check_boot_pgdir(void);
+ 
+ /* *
+  * lgdt - load the global descriptor table register and reset the
+@@ -100,14 +102,14 @@
+  * */
+ static inline void
+ lgdt(struct pseudodesc *pd) {
+-    asm volatile ("lgdt (%0)" :: "r" (pd));
+-    asm volatile ("movw %%ax, %%gs" :: "a" (USER_DS));
+-    asm volatile ("movw %%ax, %%fs" :: "a" (USER_DS));
+-    asm volatile ("movw %%ax, %%es" :: "a" (KERNEL_DS));
+-    asm volatile ("movw %%ax, %%ds" :: "a" (KERNEL_DS));
+-    asm volatile ("movw %%ax, %%ss" :: "a" (KERNEL_DS));
++    asm volatile("lgdt (%0)" ::"r"(pd));
++    asm volatile("movw %%ax, %%gs" ::"a"(USER_DS));
++    asm volatile("movw %%ax, %%fs" ::"a"(USER_DS));
++    asm volatile("movw %%ax, %%es" ::"a"(KERNEL_DS));
++    asm volatile("movw %%ax, %%ds" ::"a"(KERNEL_DS));
++    asm volatile("movw %%ax, %%ss" ::"a"(KERNEL_DS));
+     // reload cs
+-    asm volatile ("ljmp %0, $1f\n 1:\n" :: "i" (KERNEL_CS));
++    asm volatile("ljmp %0, $1f\n 1:\n" ::"i"(KERNEL_CS));
+ }
+ 
+ /* *
+@@ -145,37 +147,37 @@
+     pmm_manager->init();
+ }
+ 
+-//init_memmap - call pmm->init_memmap to build Page struct for free memory  
++//init_memmap - call pmm->init_memmap to build Page struct for free memory
+ static void
+ init_memmap(struct Page *base, size_t n) {
+     pmm_manager->init_memmap(base, n);
+ }
+ 
+-//alloc_pages - call pmm->alloc_pages to allocate a continuous n*PAGESIZE memory 
++//alloc_pages - call pmm->alloc_pages to allocate a continuous n*PAGESIZE memory
+ struct Page *
+ alloc_pages(size_t n) {
+-    struct Page *page=NULL;
++    struct Page *page = NULL;
+     bool intr_flag;
+-    
+-    while (1)
+-    {
+-         local_intr_save(intr_flag);
+-         {
+-              page = pmm_manager->alloc_pages(n);
+-         }
+-         local_intr_restore(intr_flag);
+-
+-         if (page != NULL || n > 1 || swap_init_ok == 0) break;
+-         
+-         extern struct mm_struct *check_mm_struct;
+-         //cprintf("page %x, call swap_out in alloc_pages %d\n",page, n);
+-         swap_out(check_mm_struct, n, 0);
++
++    while (1) {
++        local_intr_save(intr_flag);
++        {
++            page = pmm_manager->alloc_pages(n);
++        }
++        local_intr_restore(intr_flag);
++
++        if (page != NULL || n > 1 || swap_init_ok == 0)
++            break;
++
++        extern struct mm_struct *check_mm_struct;
++        //cprintf("page %x, call swap_out in alloc_pages %d\n",page, n);
++        swap_out(check_mm_struct, n, 0);
+     }
+     //cprintf("n %d,get page %x, No %d in alloc_pages\n",n,page,(page-pages));
+     return page;
+ }
+ 
+-//free_pages - call pmm->free_pages to free a continuous n*PAGESIZE memory 
++//free_pages - call pmm->free_pages to free a continuous n*PAGESIZE memory
+ void
+ free_pages(struct Page *base, size_t n) {
+     bool intr_flag;
+@@ -186,7 +188,7 @@
+     local_intr_restore(intr_flag);
+ }
+ 
+-//nr_free_pages - call pmm->nr_free_pages to get the size (nr*PAGESIZE) 
++//nr_free_pages - call pmm->nr_free_pages to get the size (nr*PAGESIZE)
+ //of current free memory
+ size_t
+ nr_free_pages(void) {
+@@ -208,7 +210,7 @@
+ 
+     cprintf("e820map:\n");
+     int i;
+-    for (i = 0; i < memmap->nr_map; i ++) {
++    for (i = 0; i < memmap->nr_map; i++) {
+         uint64_t begin = memmap->map[i].addr, end = begin + memmap->map[i].size;
+         cprintf("  memory: %08llx, [%08llx, %08llx], type = %d.\n",
+                 memmap->map[i].size, begin, end - 1, memmap->map[i].type);
+@@ -221,27 +223,34 @@
+     if (maxpa > KMEMSIZE) {
+         maxpa = KMEMSIZE;
+     }
+-
++    // generated by ld file
+     extern char end[];
+ 
+     npage = maxpa / PGSIZE;
++    // the start of these pages
+     pages = (struct Page *)ROUNDUP((void *)end, PGSIZE);
+ 
+-    for (i = 0; i < npage; i ++) {
++    for (i = 0; i < npage; i++) {
+         SetPageReserved(pages + i);
+     }
+ 
++    //the start of free memory
+     uintptr_t freemem = PADDR((uintptr_t)pages + sizeof(struct Page) * npage);
+ 
+-    for (i = 0; i < memmap->nr_map; i ++) {
++    for (i = 0; i < memmap->nr_map; i++) {
++        // memmap is the already existing memory layout given by BIOS
+         uint64_t begin = memmap->map[i].addr, end = begin + memmap->map[i].size;
+         if (memmap->map[i].type == E820_ARM) {
++            // these two ifs are correct the boundary
+             if (begin < freemem) {
+                 begin = freemem;
+             }
+             if (end > KMEMSIZE) {
+                 end = KMEMSIZE;
+             }
++            // correct the boundary and call init_memmap(), that is to say,
++            // the default_init_memmap(), whose args are block_size and PageNum.
++            // only the blocks over the freemem can be init
+             if (begin < end) {
+                 begin = ROUNDUP(begin, PGSIZE);
+                 end = ROUNDDOWN(end, PGSIZE);
+@@ -258,21 +267,21 @@
+ //  la:   linear address of this memory need to map (after x86 segment map)
+ //  size: memory size
+ //  pa:   physical address of this memory
+-//  perm: permission of this memory  
++//  perm: permission of this memory
+ static void
+ boot_map_segment(pde_t *pgdir, uintptr_t la, size_t size, uintptr_t pa, uint32_t perm) {
+     assert(PGOFF(la) == PGOFF(pa));
+     size_t n = ROUNDUP(size + PGOFF(la), PGSIZE) / PGSIZE;
+     la = ROUNDDOWN(la, PGSIZE);
+     pa = ROUNDDOWN(pa, PGSIZE);
+-    for (; n > 0; n --, la += PGSIZE, pa += PGSIZE) {
++    for (; n > 0; n--, la += PGSIZE, pa += PGSIZE) {
+         pte_t *ptep = get_pte(pgdir, la, 1);
+         assert(ptep != NULL);
+         *ptep = pa | PTE_P | perm;
+     }
+ }
+ 
+-//boot_alloc_page - allocate one page using pmm->alloc_pages(1) 
++//boot_alloc_page - allocate one page using pmm->alloc_pages(1)
+ // return value: the kernel virtual address of this allocated page
+ //note: this function is used to get the memory for PDT(Page Directory Table)&PT(Page Table)
+ static void *
+@@ -284,17 +293,17 @@
+     return page2kva(p);
+ }
+ 
+-//pmm_init - setup a pmm to manage physical memory, build PDT&PT to setup paging mechanism 
++//pmm_init - setup a pmm to manage physical memory, build PDT&PT to setup paging mechanism
+ //         - check the correctness of pmm & paging mechanism, print PDT&PT
+ void
+ pmm_init(void) {
+     // We've already enabled paging
+     boot_cr3 = PADDR(boot_pgdir);
+ 
+-    //We need to alloc/free the physical memory (granularity is 4KB or other size). 
++    //We need to alloc/free the physical memory (granularity is 4KB or other size).
+     //So a framework of physical memory manager (struct pmm_manager)is defined in pmm.h
+     //First we should init a physical memory manager(pmm) based on the framework.
+-    //Then pmm can alloc/free the physical memory. 
++    //Then pmm can alloc/free the physical memory.
+     //Now the first_fit/best_fit/worst_fit/buddy_system pmm are available.
+     init_pmm_manager();
+ 
+@@ -328,9 +337,8 @@
+     check_boot_pgdir();
+ 
+     print_pgdir();
+-    
+-    kmalloc_init();
+ 
++    kmalloc_init();
+ }
+ 
+ //get_pte - get pte and return the kernel virtual address of this pte for la
+@@ -363,17 +371,27 @@
+      *   PTE_W           0x002                   // page table/directory entry flags bit : Writeable
+      *   PTE_U           0x004                   // page table/directory entry flags bit : User can access
+      */
+-#if 0
+-    pde_t *pdep = NULL;   // (1) find page directory entry
+-    if (0) {              // (2) check if entry is not present
+-                          // (3) check if creating is needed, then alloc page for page table
+-                          // CAUTION: this page is used for page table, not for common data page
+-                          // (4) set page reference
+-        uintptr_t pa = 0; // (5) get linear address of page
+-                          // (6) clear page content using memset
+-                          // (7) set page directory entry's permission
++#if 1
++    pde_t *pdep = PDX(la) + pgdir;  // (1) find page directory entry
++    if (!(*pdep & PTE_P)) {         // (2) check if entry is not present
++        // (3) check if creating is needed, then alloc page for page table
++        // CAUTION: this page is used for page table, not for common data page
++        // (4) set page reference
++        // (5) get linear address of page
++        // (6) clear page content using memset
++        // (7) set page directory entry's permission
++        struct Page *page;
++        if (!create || (page = alloc_page()) == NULL) {
++            return NULL;
++        }
++        set_page_ref(page, 1);
++        uintptr_t pa = page2pa(page);  // the physical address of page table
++        memset(KADDR(pa), 0, PGSIZE);
++        *pdep = pa | PTE_P | PTE_W | PTE_U;
+     }
+-    return NULL;          // (8) return page table entry
++
++    pte_t *ptep = (pte_t *)KADDR(PDE_ADDR(*pdep)) + PTX(la);
++    return ptep;  // (8) return page table entry
+ #endif
+ }
+ 
+@@ -392,7 +410,7 @@
+ 
+ //page_remove_pte - free an Page sturct which is related linear address la
+ //                - and clean(invalidate) pte which is related linear address la
+-//note: PT is changed, so the TLB need to be invalidate 
++//note: PT is changed, so the TLB need to be invalidate
+ static inline void
+ page_remove_pte(pde_t *pgdir, uintptr_t la, pte_t *ptep) {
+     /* LAB2 EXERCISE 3: YOUR CODE
+@@ -411,13 +429,17 @@
+      * DEFINEs:
+      *   PTE_P           0x001                   // page table/directory entry flags bit : Present
+      */
+-#if 0
+-    if (0) {                      //(1) check if this page table entry is present
+-        struct Page *page = NULL; //(2) find corresponding page to pte
+-                                  //(3) decrease page reference
+-                                  //(4) and free this page when page reference reachs 0
+-                                  //(5) clear second page table entry
+-                                  //(6) flush tlb
++#if 1
++    if (*ptep & PTE_P)  //(1) check if this page table entry is present
++    {
++        struct Page *page = pte2page(*ptep);  //(2) find corresponding page to pte
++
++        if (page_ref_dec(page) == 0)  //(3) decrease page reference
++        {                             //free_page means add this page to freeList in FIFO
++            free_page(page);          //(4) and free this page when page reference reachs 0
++        }
++        *ptep = 0;                  //(5) clear second page table entry
++        tlb_invalidate(pgdir, la);  //(6) flush tlb
+     }
+ #endif
+ }
+@@ -431,7 +453,7 @@
+         pte_t *ptep = get_pte(pgdir, start, 0);
+         if (ptep == NULL) {
+             start = ROUNDDOWN(start + PTSIZE, PTSIZE);
+-            continue ;
++            continue;
+         }
+         if (*ptep != 0) {
+             page_remove_pte(pgdir, start, ptep);
+@@ -446,7 +468,7 @@
+     assert(USER_ACCESS(start, end));
+ 
+     start = ROUNDDOWN(start, PTSIZE);
+-    do {
++    do {  //exit_range by page unit
+         int pde_idx = PDX(start);
+         if (pgdir[pde_idx] & PTE_P) {
+             free_page(pde2page(pgdir[pde_idx]));
+@@ -469,25 +491,32 @@
+     // copy content by page unit.
+     do {
+         //call get_pte to find process A's pte according to the addr start
+-        pte_t *ptep = get_pte(from, start, 0), *nptep;
++        pte_t *ptep = get_pte(from, start, 0), *nptep;  // nptep for new page table entry pointer
+         if (ptep == NULL) {
++            // why would this happen?
++            // PTSIZE : bytes mapped by a page directory entry
+             start = ROUNDDOWN(start + PTSIZE, PTSIZE);
+-            continue ;
++            continue;
+         }
+         //call get_pte to find process B's pte according to the addr start. If pte is NULL, just alloc a PT
+         if (*ptep & PTE_P) {
+             if ((nptep = get_pte(to, start, 1)) == NULL) {
+                 return -E_NO_MEM;
+             }
+-        uint32_t perm = (*ptep & PTE_USER);
+-        //get page from ptep
+-        struct Page *page = pte2page(*ptep);
+-        // alloc a page for process B
+-        struct Page *npage=alloc_page();
+-        assert(page!=NULL);
+-        assert(npage!=NULL);
+-        int ret=0;
+-        /* LAB5:EXERCISE2 YOUR CODE
++            uint32_t perm = (*ptep & PTE_USER);
++            //get page from ptep
++            struct Page *page = pte2page(*ptep);
++            int ret = 0;
++            if (share) {
++                cprintf("Sharing the page 0x%x\n", page2kva(page));
++                page_insert(from, page, start, perm & ~PTE_W);
++                ret = page_insert(to, page, start, perm & ~PTE_W);
++            } else {
++                // alloc a page for process B
++                struct Page *npage = alloc_page();
++                assert(page != NULL);
++                assert(npage != NULL);
++                /* LAB5:EXERCISE2 YOUR CODE
+          * replicate content of page to npage, build the map of phy addr of nage with the linear addr start
+          *
+          * Some Useful MACROs and DEFINEs, you can use them in below implementation.
+@@ -501,7 +530,13 @@
+          * (3) memory copy from src_kvaddr to dst_kvaddr, size is PGSIZE
+          * (4) build the map of phy addr of  nage with the linear addr start
+          */
+-        assert(ret == 0);
++                uintptr_t src_kvaddr, dst_kvaddr;
++                src_kvaddr = page2kva(page);
++                dst_kvaddr = page2kva(npage);
++                memcpy(dst_kvaddr, src_kvaddr, PGSIZE);
++                ret = page_insert(to, npage, start, perm);
++                assert(ret == 0);
++            }
+         }
+         start += PGSIZE;
+     } while (start != 0 && start < end);
+@@ -524,7 +559,7 @@
+ //  la:    the linear address need to map
+ //  perm:  the permission of this Page which is setted in related pte
+ // return value: always 0
+-//note: PT is changed, so the TLB need to be invalidate 
++//note: PT is changed, so the TLB need to be invalidate
+ int
+ page_insert(pde_t *pgdir, struct Page *page, uintptr_t la, uint32_t perm) {
+     pte_t *ptep = get_pte(pgdir, la, 1);
+@@ -532,13 +567,12 @@
+         return -E_NO_MEM;
+     }
+     page_ref_inc(page);
+-    if (*ptep & PTE_P) {
++    if (*ptep & PTE_P) {  //the pte is not empty
+         struct Page *p = pte2page(*ptep);
+         if (p == page) {
+-            page_ref_dec(page);
+-        }
+-        else {
+-            page_remove_pte(pgdir, la, ptep);
++            page_ref_dec(page);  // used to modify the pages permission(?)
++        } else {
++            page_remove_pte(pgdir, la, ptep);  // if not equal, pte need to be cleaned
+         }
+     }
+     *ptep = page2pa(page) | PTE_P | perm;
+@@ -555,7 +589,7 @@
+     }
+ }
+ 
+-// pgdir_alloc_page - call alloc_page & page_insert functions to 
++// pgdir_alloc_page - call alloc_page & page_insert functions to
+ //                  - allocate a page size memory & setup an addr map
+ //                  - pa<->la with linear address la and the PDT pgdir
+ struct Page *
+@@ -566,21 +600,19 @@
+             free_page(page);
+             return NULL;
+         }
+-        if (swap_init_ok){
+-            if(check_mm_struct!=NULL) {
++        if (swap_init_ok) {
++            if (check_mm_struct != NULL) {  //这个really has been modified? only add this condition judgement
+                 swap_map_swappable(check_mm_struct, la, page, 0);
+-                page->pra_vaddr=la;
++                page->pra_vaddr = la;
+                 assert(page_ref(page) == 1);
+                 //cprintf("get No. %d  page: pra_vaddr %x, pra_link.prev %x, pra_link_next %x in pgdir_alloc_page\n", (page-pages), page->pra_vaddr,page->pra_page_link.prev, page->pra_page_link.next);
+-            } 
+-            else  {  //now current is existed, should fix it in the future
++            } else {  //now current is existed, should fix it in the future
+                 //swap_map_swappable(current->mm, la, page, 0);
+                 //page->pra_vaddr=la;
+                 //assert(page_ref(page) == 1);
+                 //panic("pgdir_alloc_page: no pages. now current is existed, should fix it in the future\n");
+             }
+         }
+-
+     }
+ 
+     return page;
+@@ -695,22 +727,22 @@
+ //  table:       the beginning addr of table
+ //  left_store:  the pointer of the high side of table's next range
+ //  right_store: the pointer of the low side of table's next range
+-// return value: 0 - not a invalid item range, perm - a valid item range with perm permission 
++// return value: 0 - not a invalid item range, perm - a valid item range with perm permission
+ static int
+ get_pgtable_items(size_t left, size_t right, size_t start, uintptr_t *table, size_t *left_store, size_t *right_store) {
+     if (start >= right) {
+         return 0;
+     }
+     while (start < right && !(table[start] & PTE_P)) {
+-        start ++;
++        start++;
+     }
+     if (start < right) {
+         if (left_store != NULL) {
+             *left_store = start;
+         }
+-        int perm = (table[start ++] & PTE_USER);
++        int perm = (table[start++] & PTE_USER);
+         while (start < right && (table[start] & PTE_USER) == perm) {
+-            start ++;
++            start++;
+         }
+         if (right_store != NULL) {
+             *right_store = start;
+diff '--color=auto' -urP lab5_origin/kern/mm/swap_fifo.c lab5/kern/mm/swap_fifo.c
+--- lab5_origin/kern/mm/swap_fifo.c	2021-02-07 16:11:21.000000000 +0800
++++ lab5/kern/mm/swap_fifo.c	2021-12-26 14:50:28.000000000 +0800
+@@ -32,11 +32,11 @@
+  */
+ static int
+ _fifo_init_mm(struct mm_struct *mm)
+-{     
+-     list_init(&pra_list_head);
+-     mm->sm_priv = &pra_list_head;
+-     //cprintf(" mm->sm_priv %x in fifo_init_mm\n",mm->sm_priv);
+-     return 0;
++{
++    list_init(&pra_list_head);
++    mm->sm_priv = &pra_list_head;
++    //cprintf(" mm->sm_priv %x in fifo_init_mm\n",mm->sm_priv);
++    return 0;
+ }
+ /*
+  * (3)_fifo_map_swappable: According FIFO PRA, we should link the most recent arrival page at the back of pra_list_head qeueue
+@@ -44,13 +44,14 @@
+ static int
+ _fifo_map_swappable(struct mm_struct *mm, uintptr_t addr, struct Page *page, int swap_in)
+ {
+-    list_entry_t *head=(list_entry_t*) mm->sm_priv;
+-    list_entry_t *entry=&(page->pra_page_link);
+- 
++    list_entry_t *head = (list_entry_t *)mm->sm_priv;
++    list_entry_t *entry = &(page->pra_page_link);
++
+     assert(entry != NULL && head != NULL);
+     //record the page access situlation
+-    /*LAB3 EXERCISE 2: YOUR CODE*/ 
++    /*LAB3 EXERCISE 2: YOUR CODE*/
+     //(1)link the most recent arrival page at the back of the pra_list_head qeueue.
++    list_add_before(head, entry);
+     return 0;
+ }
+ /*
+@@ -58,61 +59,95 @@
+  *                            then assign the value of *ptr_page to the addr of this page.
+  */
+ static int
+-_fifo_swap_out_victim(struct mm_struct *mm, struct Page ** ptr_page, int in_tick)
++_fifo_swap_out_victim(struct mm_struct *mm, struct Page **ptr_page, int in_tick)
++{
++    list_entry_t *head = (list_entry_t *)mm->sm_priv;
++    assert(head != NULL);
++    assert(in_tick == 0);
++    /* Select the victim */
++    /*LAB3 EXERCISE 2: YOUR CODE*/
++    //(1)  unlink the  earliest arrival page in front of pra_list_head qeueue
++    //(2)  assign the value of *ptr_page to the addr of this page
++    list_entry_t *le = list_next(head);
++    list_del(le); //victim
++    *ptr_page = le2page(le, pra_page_link);
++    return 0;
++}
++
++static int
++_extend_clock_swap_out_victim(struct mm_struct *mm, struct Page **ptr_page, int in_tick)
+ {
+-     list_entry_t *head=(list_entry_t*) mm->sm_priv;
+-         assert(head != NULL);
+-     assert(in_tick==0);
+-     /* Select the victim */
+-     /*LAB3 EXERCISE 2: YOUR CODE*/ 
+-     //(1)  unlink the  earliest arrival page in front of pra_list_head qeueue
+-     //(2)  assign the value of *ptr_page to the addr of this page
+-     return 0;
++    list_entry_t *head = (list_entry_t *)mm->sm_priv;
++    assert(head != NULL);
++    assert(in_tick == 0);
++    //在head双向链表中从头开始遍历, 用三个指针取三个第一次遍历到的page
++    list_entry_t *le = head->next, *_00 = NULL, *_10 = NULL, *_11 = NULL;
++    while (le != head)
++    {
++        struct Page *page = le2page(le, pra_page_link);
++
++        pte_t *ptep = get_pte(mm->pgdir, page->pra_vaddr, 0);
++        assert(ptep != NULL);
++        if (!(*ptep & PTE_A))
++        {
++            _00 = le;
++            break;
++        }
++        else if (!(*ptep & PTE_D) && _10 == NULL)
++            _10 = le;
++        else if (_11 == NULL)
++            _11 = le;
++        le = le->next;
++    }
++    le = _00 != NULL ? _00 : (_10 != NULL ? _10 : _11);
++    *ptr_page = le2page(le, pra_page_link);
++    list_del(le);
++    return 0;
+ }
+ 
+ static int
+-_fifo_check_swap(void) {
++_fifo_check_swap(void)
++{
+     cprintf("write Virt Page c in fifo_check_swap\n");
+     *(unsigned char *)0x3000 = 0x0c;
+-    assert(pgfault_num==4);
++    assert(pgfault_num == 4);
+     cprintf("write Virt Page a in fifo_check_swap\n");
+     *(unsigned char *)0x1000 = 0x0a;
+-    assert(pgfault_num==4);
++    assert(pgfault_num == 4);
+     cprintf("write Virt Page d in fifo_check_swap\n");
+     *(unsigned char *)0x4000 = 0x0d;
+-    assert(pgfault_num==4);
++    assert(pgfault_num == 4);
+     cprintf("write Virt Page b in fifo_check_swap\n");
+     *(unsigned char *)0x2000 = 0x0b;
+-    assert(pgfault_num==4);
++    assert(pgfault_num == 4);
+     cprintf("write Virt Page e in fifo_check_swap\n");
+     *(unsigned char *)0x5000 = 0x0e;
+-    assert(pgfault_num==5);
++    assert(pgfault_num == 5);
+     cprintf("write Virt Page b in fifo_check_swap\n");
+     *(unsigned char *)0x2000 = 0x0b;
+-    assert(pgfault_num==5);
++    assert(pgfault_num == 5);
+     cprintf("write Virt Page a in fifo_check_swap\n");
+     *(unsigned char *)0x1000 = 0x0a;
+-    assert(pgfault_num==6);
++    assert(pgfault_num == 6);
+     cprintf("write Virt Page b in fifo_check_swap\n");
+     *(unsigned char *)0x2000 = 0x0b;
+-    assert(pgfault_num==7);
++    assert(pgfault_num == 7);
+     cprintf("write Virt Page c in fifo_check_swap\n");
+     *(unsigned char *)0x3000 = 0x0c;
+-    assert(pgfault_num==8);
++    assert(pgfault_num == 8);
+     cprintf("write Virt Page d in fifo_check_swap\n");
+     *(unsigned char *)0x4000 = 0x0d;
+-    assert(pgfault_num==9);
++    assert(pgfault_num == 9);
+     cprintf("write Virt Page e in fifo_check_swap\n");
+     *(unsigned char *)0x5000 = 0x0e;
+-    assert(pgfault_num==10);
++    assert(pgfault_num == 10);
+     cprintf("write Virt Page a in fifo_check_swap\n");
+     assert(*(unsigned char *)0x1000 == 0x0a);
+     *(unsigned char *)0x1000 = 0x0a;
+-    assert(pgfault_num==11);
++    assert(pgfault_num == 11);
+     return 0;
+ }
+ 
+-
+ static int
+ _fifo_init(void)
+ {
+@@ -127,17 +162,18 @@
+ 
+ static int
+ _fifo_tick_event(struct mm_struct *mm)
+-{ return 0; }
+-
++{
++    return 0;
++}
+ 
+ struct swap_manager swap_manager_fifo =
+-{
+-     .name            = "fifo swap manager",
+-     .init            = &_fifo_init,
+-     .init_mm         = &_fifo_init_mm,
+-     .tick_event      = &_fifo_tick_event,
+-     .map_swappable   = &_fifo_map_swappable,
+-     .set_unswappable = &_fifo_set_unswappable,
+-     .swap_out_victim = &_fifo_swap_out_victim,
+-     .check_swap      = &_fifo_check_swap,
++    {
++        .name = "fifo swap manager",
++        .init = &_fifo_init,
++        .init_mm = &_fifo_init_mm,
++        .tick_event = &_fifo_tick_event,
++        .map_swappable = &_fifo_map_swappable,
++        .set_unswappable = &_fifo_set_unswappable,
++        .swap_out_victim = &_extend_clock_swap_out_victim,
++        .check_swap = &_fifo_check_swap,
+ };
+diff '--color=auto' -urP lab5_origin/kern/mm/vmm.c lab5/kern/mm/vmm.c
+--- lab5_origin/kern/mm/vmm.c	2021-02-07 16:11:21.000000000 +0800
++++ lab5/kern/mm/vmm.c	2021-12-30 21:52:19.000000000 +0800
+@@ -1,13 +1,13 @@
+-#include <vmm.h>
+-#include <sync.h>
+-#include <string.h>
+ #include <assert.h>
+-#include <stdio.h>
+ #include <error.h>
++#include <kmalloc.h>
+ #include <pmm.h>
+-#include <x86.h>
++#include <stdio.h>
++#include <string.h>
+ #include <swap.h>
+-#include <kmalloc.h>
++#include <sync.h>
++#include <vmm.h>
++#include <x86.h>
+ 
+ /* 
+   vmm design include two parts: mm_struct (mm) & vma_struct (vma)
+@@ -35,9 +35,12 @@
+      void check_pgfault(void);
+ */
+ 
+-static void check_vmm(void);
+-static void check_vma_struct(void);
+-static void check_pgfault(void);
++static void
++check_vmm(void);
++static void
++check_vma_struct(void);
++static void
++check_pgfault(void);
+ 
+ // mm_create -  alloc a mm_struct & initialize it.
+ struct mm_struct *
+@@ -50,12 +53,14 @@
+         mm->pgdir = NULL;
+         mm->map_count = 0;
+ 
+-        if (swap_init_ok) swap_init_mm(mm);
+-        else mm->sm_priv = NULL;
+-        
++        if (swap_init_ok)
++            swap_init_mm(mm);
++        else
++            mm->sm_priv = NULL;
++
+         set_mm_count(mm, 0);
+         lock_init(&(mm->mm_lock));
+-    }    
++    }
+     return mm;
+ }
+ 
+@@ -72,7 +77,6 @@
+     return vma;
+ }
+ 
+-
+ // find_vma - find a vma  (vma->vm_start <= addr <= vma_vm_end)
+ struct vma_struct *
+ find_vma(struct mm_struct *mm, uintptr_t addr) {
+@@ -80,18 +84,18 @@
+     if (mm != NULL) {
+         vma = mm->mmap_cache;
+         if (!(vma != NULL && vma->vm_start <= addr && vma->vm_end > addr)) {
+-                bool found = 0;
+-                list_entry_t *list = &(mm->mmap_list), *le = list;
+-                while ((le = list_next(le)) != list) {
+-                    vma = le2vma(le, list_link);
+-                    if (vma->vm_start<=addr && addr < vma->vm_end) {
+-                        found = 1;
+-                        break;
+-                    }
+-                }
+-                if (!found) {
+-                    vma = NULL;
++            bool found = 0;
++            list_entry_t *list = &(mm->mmap_list), *le = list;
++            while ((le = list_next(le)) != list) {
++                vma = le2vma(le, list_link);
++                if (vma->vm_start <= addr && addr < vma->vm_end) {
++                    found = 1;
++                    break;
+                 }
++            }
++            if (!found) {
++                vma = NULL;
++            }
+         }
+         if (vma != NULL) {
+             mm->mmap_cache = vma;
+@@ -100,7 +104,6 @@
+     return vma;
+ }
+ 
+-
+ // check_vma_overlap - check if vma1 overlaps vma2 ?
+ static inline void
+ check_vma_overlap(struct vma_struct *prev, struct vma_struct *next) {
+@@ -109,7 +112,6 @@
+     assert(next->vm_start < next->vm_end);
+ }
+ 
+-
+ // insert_vma_struct -insert vma in mm's list link
+ void
+ insert_vma_struct(struct mm_struct *mm, struct vma_struct *vma) {
+@@ -117,14 +119,14 @@
+     list_entry_t *list = &(mm->mmap_list);
+     list_entry_t *le_prev = list, *le_next;
+ 
+-        list_entry_t *le = list;
+-        while ((le = list_next(le)) != list) {
+-            struct vma_struct *mmap_prev = le2vma(le, list_link);
+-            if (mmap_prev->vm_start > vma->vm_start) {
+-                break;
+-            }
+-            le_prev = le;
++    list_entry_t *le = list;
++    while ((le = list_next(le)) != list) {
++        struct vma_struct *mmap_prev = le2vma(le, list_link);
++        if (mmap_prev->vm_start > vma->vm_start) {
++            break;
+         }
++        le_prev = le;
++    }
+ 
+     le_next = list_next(le_prev);
+ 
+@@ -139,7 +141,7 @@
+     vma->vm_mm = mm;
+     list_add_after(le_prev, &(vma->list_link));
+ 
+-    mm->map_count ++;
++    mm->map_count++;
+ }
+ 
+ // mm_destroy - free mm and mm internal fields
+@@ -150,15 +152,14 @@
+     list_entry_t *list = &(mm->mmap_list), *le;
+     while ((le = list_next(list)) != list) {
+         list_del(le);
+-        kfree(le2vma(le, list_link));  //kfree vma        
++        kfree(le2vma(le, list_link));  //kfree vma
+     }
+-    kfree(mm); //kfree mm
+-    mm=NULL;
++    kfree(mm);  //kfree mm
++    mm = NULL;
+ }
+ 
+ int
+-mm_map(struct mm_struct *mm, uintptr_t addr, size_t len, uint32_t vm_flags,
+-       struct vma_struct **vma_store) {
++mm_map(struct mm_struct *mm, uintptr_t addr, size_t len, uint32_t vm_flags, struct vma_struct **vma_store) {
+     uintptr_t start = ROUNDDOWN(addr, PGSIZE), end = ROUNDUP(addr + len, PGSIZE);
+     if (!USER_ACCESS(start, end)) {
+         return -E_INVAL;
+@@ -201,7 +202,7 @@
+ 
+         insert_vma_struct(to, nvma);
+ 
+-        bool share = 0;
++        bool share = 1;
+         if (copy_range(to->pgdir, from->pgdir, vma->vm_start, vma->vm_end, share) != 0) {
+             return -E_NO_MEM;
+         }
+@@ -253,7 +254,7 @@
+ static void
+ check_vmm(void) {
+     size_t nr_free_pages_store = nr_free_pages();
+-    
++
+     check_vma_struct();
+     check_pgfault();
+ 
+@@ -270,13 +271,13 @@
+     int step1 = 10, step2 = step1 * 10;
+ 
+     int i;
+-    for (i = step1; i >= 1; i --) {
++    for (i = step1; i >= 1; i--) {
+         struct vma_struct *vma = vma_create(i * 5, i * 5 + 2, 0);
+         assert(vma != NULL);
+         insert_vma_struct(mm, vma);
+     }
+ 
+-    for (i = step1 + 1; i <= step2; i ++) {
++    for (i = step1 + 1; i <= step2; i++) {
+         struct vma_struct *vma = vma_create(i * 5, i * 5 + 2, 0);
+         assert(vma != NULL);
+         insert_vma_struct(mm, vma);
+@@ -284,33 +285,33 @@
+ 
+     list_entry_t *le = list_next(&(mm->mmap_list));
+ 
+-    for (i = 1; i <= step2; i ++) {
++    for (i = 1; i <= step2; i++) {
+         assert(le != &(mm->mmap_list));
+         struct vma_struct *mmap = le2vma(le, list_link);
+         assert(mmap->vm_start == i * 5 && mmap->vm_end == i * 5 + 2);
+         le = list_next(le);
+     }
+ 
+-    for (i = 5; i <= 5 * step2; i +=5) {
++    for (i = 5; i <= 5 * step2; i += 5) {
+         struct vma_struct *vma1 = find_vma(mm, i);
+         assert(vma1 != NULL);
+-        struct vma_struct *vma2 = find_vma(mm, i+1);
++        struct vma_struct *vma2 = find_vma(mm, i + 1);
+         assert(vma2 != NULL);
+-        struct vma_struct *vma3 = find_vma(mm, i+2);
++        struct vma_struct *vma3 = find_vma(mm, i + 2);
+         assert(vma3 == NULL);
+-        struct vma_struct *vma4 = find_vma(mm, i+3);
++        struct vma_struct *vma4 = find_vma(mm, i + 3);
+         assert(vma4 == NULL);
+-        struct vma_struct *vma5 = find_vma(mm, i+4);
++        struct vma_struct *vma5 = find_vma(mm, i + 4);
+         assert(vma5 == NULL);
+ 
+-        assert(vma1->vm_start == i  && vma1->vm_end == i  + 2);
+-        assert(vma2->vm_start == i  && vma2->vm_end == i  + 2);
++        assert(vma1->vm_start == i && vma1->vm_end == i + 2);
++        assert(vma2->vm_start == i && vma2->vm_end == i + 2);
+     }
+ 
+-    for (i =4; i>=0; i--) {
+-        struct vma_struct *vma_below_5= find_vma(mm,i);
+-        if (vma_below_5 != NULL ) {
+-           cprintf("vma_below_5: i %x, start %x, end %x\n",i, vma_below_5->vm_start, vma_below_5->vm_end); 
++    for (i = 4; i >= 0; i--) {
++        struct vma_struct *vma_below_5 = find_vma(mm, i);
++        if (vma_below_5 != NULL) {
++            cprintf("vma_below_5: i %x, start %x, end %x\n", i, vma_below_5->vm_start, vma_below_5->vm_end);
+         }
+         assert(vma_below_5 == NULL);
+     }
+@@ -343,11 +344,11 @@
+     assert(find_vma(mm, addr) == vma);
+ 
+     int i, sum = 0;
+-    for (i = 0; i < 100; i ++) {
++    for (i = 0; i < 100; i++) {
+         *(char *)(addr + i) = i;
+         sum += i;
+     }
+-    for (i = 0; i < 100; i ++) {
++    for (i = 0; i < 100; i++) {
+         sum -= *(char *)(addr + i);
+     }
+     assert(sum == 0);
+@@ -365,7 +366,7 @@
+     cprintf("check_pgfault() succeeded!\n");
+ }
+ //page fault number
+-volatile unsigned int pgfault_num=0;
++volatile unsigned int pgfault_num = 0;
+ 
+ /* do_pgfault - interrupt handler to process the page fault execption
+  * @mm         : the control struct for a set of vma using the same PDT
+@@ -393,7 +394,6 @@
+     int ret = -E_INVAL;
+     //try to find a vma which include addr
+     struct vma_struct *vma = find_vma(mm, addr);
+-
+     pgfault_num++;
+     //If the addr is in the range of a mm's vma?
+     if (vma == NULL || vma->vm_start > addr) {
+@@ -402,24 +402,24 @@
+     }
+     //check the error_code
+     switch (error_code & 3) {
+-    default:
++        default:
+             /* error code flag : default is 3 ( W/R=1, P=1): write, present */
+-    case 2: /* error code flag : (W/R=1, P=0): write, not present */
+-        if (!(vma->vm_flags & VM_WRITE)) {
+-            cprintf("do_pgfault failed: error code flag = write AND not present, but the addr's vma cannot write\n");
+-            goto failed;
+-        }
+-        break;
+-    case 1: /* error code flag : (W/R=0, P=1): read, present */
+-        cprintf("do_pgfault failed: error code flag = read AND present\n");
+-        goto failed;
+-    case 0: /* error code flag : (W/R=0, P=0): read, not present */
+-        if (!(vma->vm_flags & (VM_READ | VM_EXEC))) {
+-            cprintf("do_pgfault failed: error code flag = read AND not present, but the addr's vma cannot read or exec\n");
++        case 2: /* error code flag : (W/R=1, P=0): write, not present */
++            if (!(vma->vm_flags & VM_WRITE)) {
++                cprintf("do_pgfault failed: error code flag = write AND not present, but the addr's vma cannot write\n");
++                goto failed;
++            }
++            break;
++        case 1: /* error code flag : (W/R=0, P=1): read, present */
++            cprintf("do_pgfault failed: error code flag = read AND present\n");
+             goto failed;
+-        }
++        case 0: /* error code flag : (W/R=0, P=0): read, not present */
++            if (!(vma->vm_flags & (VM_READ | VM_EXEC))) {
++                cprintf("do_pgfault failed: error code flag = read AND not present, but the addr's vma cannot read or exec\n");
++                goto failed;
++            }
+     }
+-    /* IF (write an existed addr ) OR
++    /* IF (write an existed addr ) OR  // what the fuck????
+      *    (write an non_existed addr && addr is writable) OR
+      *    (read  an non_existed addr && addr is readable)
+      * THEN
+@@ -433,7 +433,7 @@
+ 
+     ret = -E_NO_MEM;
+ 
+-    pte_t *ptep=NULL;
++    pte_t *ptep = NULL;
+     /*LAB3 EXERCISE 1: YOUR CODE
+     * Maybe you want help comment, BELOW comments can help you finish the code
+     *
+@@ -451,15 +451,17 @@
+     *   mm->pgdir : the PDT of these vma
+     *
+     */
+-#if 0
++#if 1
+     /*LAB3 EXERCISE 1: YOUR CODE*/
+-    ptep = ???              //(1) try to find a pte, if pte's PT(Page Table) isn't existed, then create a PT.
++    ptep = get_pte(mm->pgdir, addr, 1);  //(1) try to find a pte, if pte's PT(Page Table) isn't existed, then create a PT.
+     if (*ptep == 0) {
+-                            //(2) if the phy addr isn't exist, then alloc a page & map the phy addr with logical addr
+-
+-    }
+-    else {
+-    /*LAB3 EXERCISE 2: YOUR CODE
++        //(2) if the phy addr isn't exist, then alloc a page & map the phy addr with logical addr
++        if (pgdir_alloc_page(mm->pgdir, addr, perm) == NULL) {
++            cprintf("pgdir_alloc_page in do_pgfault failed\n");
++            goto failed;
++        }
++    } else {
++        /*LAB3 EXERCISE 2: YOUR CODE
+     * Now we think this pte is a  swap entry, we should load data from disk to a page with phy addr,
+     * and map the phy addr with logical addr, trigger swap manager to record the access situation of this page.
+     *
+@@ -470,7 +472,7 @@
+     *    page_insert ： build the map of phy addr of an Page with the linear addr la
+     *    swap_map_swappable ： set the page swappable
+     */
+-    /*
++        /*
+      * LAB5 CHALLENGE ( the implmentation Copy on Write)
+ 		There are 2 situlations when code comes here.
+ 		  1) *ptep & PTE_P == 1, it means one process try to write a readonly page. 
+@@ -479,21 +481,41 @@
+ 		  2) *ptep & PTE_P == 0 & but *ptep!=0, it means this pte is a  swap entry.
+ 		     We should add the LAB3's results here.
+      */
+-        if(swap_init_ok) {
+-            struct Page *page=NULL;
+-                                    //(1）According to the mm AND addr, try to load the content of right disk page
+-                                    //    into the memory which page managed.
+-                                    //(2) According to the mm, addr AND page, setup the map of phy addr <---> logical addr
+-                                    //(3) make the page swappable.
+-                                    //(4) [NOTICE]: you myabe need to update your lab3's implementation for LAB5's normal execution.
+-        }
+-        else {
+-            cprintf("no swap_init_ok but ptep is %x, failed\n",*ptep);
+-            goto failed;
++        struct Page *page = NULL;
++        if (*ptep & PTE_P) {
++            cprintf("\n\nCOW: ptep 0x%x, pte 0x%x\n", ptep, *ptep);
++            page = pte2page(*ptep);
++            if (page_ref(page) > 1) {
++                struct Page *newPage = pgdir_alloc_page(mm->pgdir, addr, perm);
++                void *kva_src = page2kva(page);
++                void *kva_dst = page2kva(newPage);
++                memcpy(kva_dst, kva_src, PGSIZE);
++            }
++            else
++                page_insert(mm->pgdir, page, addr, perm);
++        } else {
++            if (swap_init_ok) {
++                //struct Page *page = NULL;
++                //(1) According to the mm AND addr, try to load the content of right disk page
++                //    into the memory which page managed.
++                //(2) According to the mm, addr AND page, setup the map of phy addr <---> logical addr
++                //(3) make the page swappable.
++                //(4) [NOTICE]: you myabe need to update your lab3's implementation for LAB5's normal execution.
++                if ((ret = swap_in(mm, addr, &page)) != 0) {
++                    cprintf("swap_in in do_pgfault failed\n");
++                    goto failed;
++                }
++                page_insert(mm->pgdir, page, addr, perm);
++            } else {
++                cprintf("no swap_init_ok but ptep is %x, failed\n", *ptep);
++                goto failed;
++            }
+         }
+-   }
++        swap_map_swappable(mm, addr, page, 1);
++        page->pra_vaddr = addr;
++    }
+ #endif
+-   ret = 0;
++    ret = 0;
+ failed:
+     return ret;
+ }
+@@ -514,7 +536,7 @@
+                 return 0;
+             }
+             if (write && (vma->vm_flags & VM_STACK)) {
+-                if (start < vma->vm_start + PGSIZE) { //check stack start & size
++                if (start < vma->vm_start + PGSIZE) {  //check stack start & size
+                     return 0;
+                 }
+             }
+@@ -524,4 +546,3 @@
+     }
+     return KERN_ACCESS(addr, addr + len);
+ }
+-
+diff '--color=auto' -urP lab5_origin/kern/mm/vmm.h lab5/kern/mm/vmm.h
+--- lab5_origin/kern/mm/vmm.h	2021-02-07 16:11:21.000000000 +0800
++++ lab5/kern/mm/vmm.h	2021-12-26 16:17:03.000000000 +0800
+@@ -34,7 +34,7 @@
+     pde_t *pgdir;                  // the PDT of these vma
+     int map_count;                 // the count of these vma
+     void *sm_priv;                 // the private data for swap manager
+-    int mm_count;                  // the number ofprocess which shared the mm
++    int mm_count;                  // the number of process which shared the mm
+     lock_t mm_lock;                // mutex for using dup_mmap fun to duplicat the mm
+ };
+ 
+diff '--color=auto' -urP lab5_origin/kern/process/entry.S lab5/kern/process/entry.S
+--- lab5_origin/kern/process/entry.S	2021-02-07 16:11:21.000000000 +0800
++++ lab5/kern/process/entry.S	2021-12-26 14:50:28.000000000 +0800
+@@ -1,7 +1,8 @@
+ .text
+ .globl kernel_thread_entry
+ kernel_thread_entry:        # void kernel_thread(void)
+-
++	# just like the preparation before the execution of int main(arg)
++	# and save the return value of main on stack (by `return 0;` statement)	
+     pushl %edx              # push arg
+     call *%ebx              # call fn
+ 
+diff '--color=auto' -urP lab5_origin/kern/process/proc.c lab5/kern/process/proc.c
+--- lab5_origin/kern/process/proc.c	2021-02-07 16:11:21.000000000 +0800
++++ lab5/kern/process/proc.c	2021-12-30 21:50:28.000000000 +0800
+@@ -1,22 +1,22 @@
+-#include <proc.h>
++#include <assert.h>
++#include <elf.h>
+ #include <kmalloc.h>
+-#include <string.h>
+-#include <sync.h>
+ #include <pmm.h>
+-#include <error.h>
++#include <proc.h>
+ #include <sched.h>
+-#include <elf.h>
+-#include <vmm.h>
+-#include <trap.h>
+ #include <stdio.h>
+ #include <stdlib.h>
+-#include <assert.h>
++#include <string.h>
++#include <sync.h>
++#include <trap.h>
+ #include <unistd.h>
++#include <vmm.h>
++#include "error.h"
+ 
+ /* ------------- process/thread mechanism design&implementation -------------
+ (an simplified Linux process/thread mechanism )
+ introduction:
+-  ucore implements a simple process/thread mechanism. process contains the independent memory sapce, at least one threads
++  ucore implements a simple process/thread mechanism. process contains the independent memory space, at least one threads
+ for execution, the kernel data(for management), processor state (for context switch), files(in lab6), etc. ucore needs to
+ manage all these details efficiently. In ucore, a thread is just a special kind of process(share process's memory).
+ ------------------------------
+@@ -62,9 +62,9 @@
+ // the process set's list
+ list_entry_t proc_list;
+ 
+-#define HASH_SHIFT          10
+-#define HASH_LIST_SIZE      (1 << HASH_SHIFT)
+-#define pid_hashfn(x)       (hash32(x, HASH_SHIFT))
++#define HASH_SHIFT 10
++#define HASH_LIST_SIZE (1 << HASH_SHIFT)
++#define pid_hashfn(x) (hash32(x, HASH_SHIFT))
+ 
+ // has list for process set based on pid
+ static list_entry_t hash_list[HASH_LIST_SIZE];
+@@ -78,17 +78,20 @@
+ 
+ static int nr_process = 0;
+ 
+-void kernel_thread_entry(void);
+-void forkrets(struct trapframe *tf);
+-void switch_to(struct context *from, struct context *to);
++void
++kernel_thread_entry(void);
++void
++forkrets(struct trapframe *tf);
++void
++switch_to(struct context *from, struct context *to);
+ 
+ // alloc_proc - alloc a proc_struct and init all fields of proc_struct
+ static struct proc_struct *
+ alloc_proc(void) {
+     struct proc_struct *proc = kmalloc(sizeof(struct proc_struct));
+     if (proc != NULL) {
+-    //LAB4:EXERCISE1 YOUR CODE
+-    /*
++        //LAB4:EXERCISE1 YOUR CODE
++        /*
+      * below fields in proc_struct need to be initialized
+      *       enum proc_state state;                      // Process state
+      *       int pid;                                    // Process ID
+@@ -103,12 +106,17 @@
+      *       uint32_t flags;                             // Process flag
+      *       char name[PROC_NAME_LEN + 1];               // Process name
+      */
+-     //LAB5 YOUR CODE : (update LAB4 steps)
+-    /*
++        //LAB5 YOUR CODE : (update LAB4 steps)
++        /*
+      * below fields(add in LAB5) in proc_struct need to be initialized	
+      *       uint32_t wait_state;                        // waiting state
+      *       struct proc_struct *cptr, *yptr, *optr;     // relations between processes
+ 	 */
++        memset(proc, 0, sizeof(struct proc_struct));
++        proc->state = PROC_UNINIT;
++        proc->pid = -1;
++        proc->cr3 = boot_cr3;
++        //proc->wait_state =
+     }
+     return proc;
+ }
+@@ -137,7 +145,7 @@
+         proc->optr->yptr = proc;
+     }
+     proc->parent->cptr = proc;
+-    nr_process ++;
++    nr_process++;
+ }
+ 
+ // remove_links - clean the relation links of process
+@@ -149,11 +157,10 @@
+     }
+     if (proc->yptr != NULL) {
+         proc->yptr->optr = proc->optr;
++    } else {
++        proc->parent->cptr = proc->optr;
+     }
+-    else {
+-       proc->parent->cptr = proc->optr;
+-    }
+-    nr_process --;
++    nr_process--;
+ }
+ 
+ // get_pid - alloc a unique pid for process
+@@ -163,7 +170,7 @@
+     struct proc_struct *proc;
+     list_entry_t *list = &proc_list, *le;
+     static int next_safe = MAX_PID, last_pid = MAX_PID;
+-    if (++ last_pid >= MAX_PID) {
++    if (++last_pid >= MAX_PID) {
+         last_pid = 1;
+         goto inside;
+     }
+@@ -175,15 +182,14 @@
+         while ((le = list_next(le)) != list) {
+             proc = le2proc(le, list_link);
+             if (proc->pid == last_pid) {
+-                if (++ last_pid >= next_safe) {
++                if (++last_pid >= next_safe) {
+                     if (last_pid >= MAX_PID) {
+                         last_pid = 1;
+                     }
+                     next_safe = MAX_PID;
+                     goto repeat;
+                 }
+-            }
+-            else if (proc->pid > last_pid && next_safe > proc->pid) {
++            } else if (proc->pid > last_pid && next_safe > proc->pid) {
+                 next_safe = proc->pid;
+             }
+         }
+@@ -245,7 +251,7 @@
+ }
+ 
+ // kernel_thread - create a kernel thread using "fn" function
+-// NOTE: the contents of temp trapframe tf will be copied to 
++// NOTE: the contents of temp trapframe tf will be copied to
+ //       proc->tf in do_fork-->copy_thread function
+ int
+ kernel_thread(int (*fn)(void *), void *arg, uint32_t clone_flags) {
+@@ -300,6 +306,7 @@
+ //         - if clone_flags & CLONE_VM, then "share" ; else "duplicate"
+ static int
+ copy_mm(uint32_t clone_flags, struct proc_struct *proc) {
++    //@mm is new proc's mm_struct, @oldmm is as its name
+     struct mm_struct *mm, *oldmm = current->mm;
+ 
+     /* current is a kernel thread */
+@@ -349,9 +356,9 @@
+ copy_thread(struct proc_struct *proc, uintptr_t esp, struct trapframe *tf) {
+     proc->tf = (struct trapframe *)(proc->kstack + KSTACKSIZE) - 1;
+     *(proc->tf) = *tf;
+-    proc->tf->tf_regs.reg_eax = 0;
+-    proc->tf->tf_esp = esp;
+-    proc->tf->tf_eflags |= FL_IF;
++    proc->tf->tf_regs.reg_eax = 0;	//setup child's return value
++    proc->tf->tf_esp = esp;		//setup child's user stack
++    proc->tf->tf_eflags |= FL_IF;	//enalbe interrupt
+ 
+     proc->context.eip = (uintptr_t)forkret;
+     proc->context.esp = (uintptr_t)(proc->tf);
+@@ -396,14 +403,45 @@
+     //    6. call wakeup_proc to make the new child process RUNNABLE
+     //    7. set ret vaule using child proc's pid
+ 
+-	//LAB5 YOUR CODE : (update LAB4 steps)
+-   /* Some Functions
++    //LAB5 YOUR CODE : (update LAB4 steps)
++    /* Some Functions
+     *    set_links:  set the relation links of process.  ALSO SEE: remove_links:  lean the relation links of process 
+     *    -------------------
+ 	*    update step 1: set child proc's parent to current process, make sure current process's wait_state is 0
+ 	*    update step 5: insert proc_struct into hash_list && proc_list, set the relation links of process
+     */
+-	
++    if ((proc = alloc_proc()) == NULL) {
++        cprintf("alloc_proc() failed!");
++        goto fork_out;
++    }
++
++    proc->parent = current;
++    assert(current->wait_state == 0);
++
++    if ((ret = setup_kstack(proc)) != 0) {  //call the alloc_pages to alloc kstack space
++        cprintf("set_kstack() failed!");
++        goto bad_fork_cleanup_proc;
++    }
++
++    if (copy_mm(clone_flags, proc) != 0) {
++        cprintf("copy_mm() failed!");
++        goto bad_fork_cleanup_kstack;
++    }
++
++    copy_thread(proc, stack, tf);
++
++    bool intr_flag;
++    local_intr_save(intr_flag);
++    {
++        proc->pid = get_pid();
++        hash_proc(proc);
++        set_links(proc);
++    }
++    local_intr_restore(intr_flag);
++
++    wakeup_proc(proc);
++
++    ret = proc->pid;
+ fork_out:
+     return ret;
+ 
+@@ -426,7 +464,7 @@
+     if (current == initproc) {
+         panic("initproc exit.\n");
+     }
+-    
++
+     struct mm_struct *mm = current->mm;
+     if (mm != NULL) {
+         lcr3(boot_cr3);
+@@ -439,7 +477,7 @@
+     }
+     current->state = PROC_ZOMBIE;
+     current->exit_code = error_code;
+-    
++
+     bool intr_flag;
+     struct proc_struct *proc;
+     local_intr_save(intr_flag);
+@@ -451,7 +489,7 @@
+         while (current->cptr != NULL) {
+             proc = current->cptr;
+             current->cptr = proc->optr;
+-    
++
+             proc->yptr = NULL;
+             if ((proc->optr = initproc->cptr) != NULL) {
+                 initproc->cptr->yptr = proc;
+@@ -466,7 +504,7 @@
+         }
+     }
+     local_intr_restore(intr_flag);
+-    
++
+     schedule();
+     panic("do_exit will not return!! %d.\n", current->pid);
+ }
+@@ -505,24 +543,28 @@
+ 
+     uint32_t vm_flags, perm;
+     struct proghdr *ph_end = ph + elf->e_phnum;
+-    for (; ph < ph_end; ph ++) {
+-    //(3.4) find every program section headers
++    for (; ph < ph_end; ph++) {
++        //(3.4) find every program section headers
+         if (ph->p_type != ELF_PT_LOAD) {
+-            continue ;
++            continue;
+         }
+         if (ph->p_filesz > ph->p_memsz) {
+             ret = -E_INVAL_ELF;
+             goto bad_cleanup_mmap;
+         }
+         if (ph->p_filesz == 0) {
+-            continue ;
++            continue;
+         }
+-    //(3.5) call mm_map fun to setup the new vma ( ph->p_va, ph->p_memsz)
++        //(3.5) call mm_map fun to setup the new vma ( ph->p_va, ph->p_memsz)
+         vm_flags = 0, perm = PTE_U;
+-        if (ph->p_flags & ELF_PF_X) vm_flags |= VM_EXEC;
+-        if (ph->p_flags & ELF_PF_W) vm_flags |= VM_WRITE;
+-        if (ph->p_flags & ELF_PF_R) vm_flags |= VM_READ;
+-        if (vm_flags & VM_WRITE) perm |= PTE_W;
++        if (ph->p_flags & ELF_PF_X)
++            vm_flags |= VM_EXEC;
++        if (ph->p_flags & ELF_PF_W)
++            vm_flags |= VM_WRITE;
++        if (ph->p_flags & ELF_PF_R)
++            vm_flags |= VM_READ;
++        if (vm_flags & VM_WRITE)
++            perm |= PTE_W;
+         if ((ret = mm_map(mm, ph->p_va, ph->p_memsz, vm_flags, NULL)) != 0) {
+             goto bad_cleanup_mmap;
+         }
+@@ -532,9 +574,9 @@
+ 
+         ret = -E_NO_MEM;
+ 
+-     //(3.6) alloc memory, and  copy the contents of every program section (from, from+end) to process's memory (la, la+end)
++        //(3.6) alloc memory, and  copy the contents of every program section (from, from+end) to process's memory (la, la+end)
+         end = ph->p_va + ph->p_filesz;
+-     //(3.6.1) copy TEXT/DATA section of bianry program
++        //(3.6.1) copy TEXT/DATA section of bianry program
+         while (start < end) {
+             if ((page = pgdir_alloc_page(mm->pgdir, la, perm)) == NULL) {
+                 goto bad_cleanup_mmap;
+@@ -547,12 +589,12 @@
+             start += size, from += size;
+         }
+ 
+-      //(3.6.2) build BSS section of binary program
++        //(3.6.2) build BSS section of binary program
+         end = ph->p_va + ph->p_memsz;
+         if (start < la) {
+             /* ph->p_memsz == ph->p_filesz */
+             if (start == end) {
+-                continue ;
++                continue;
+             }
+             off = start + PGSIZE - la, size = PGSIZE - off;
+             if (end < la) {
+@@ -579,11 +621,11 @@
+     if ((ret = mm_map(mm, USTACKTOP - USTACKSIZE, USTACKSIZE, vm_flags, NULL)) != 0) {
+         goto bad_cleanup_mmap;
+     }
+-    assert(pgdir_alloc_page(mm->pgdir, USTACKTOP-PGSIZE , PTE_USER) != NULL);
+-    assert(pgdir_alloc_page(mm->pgdir, USTACKTOP-2*PGSIZE , PTE_USER) != NULL);
+-    assert(pgdir_alloc_page(mm->pgdir, USTACKTOP-3*PGSIZE , PTE_USER) != NULL);
+-    assert(pgdir_alloc_page(mm->pgdir, USTACKTOP-4*PGSIZE , PTE_USER) != NULL);
+-    
++    assert(pgdir_alloc_page(mm->pgdir, USTACKTOP - PGSIZE, PTE_USER) != NULL);
++    assert(pgdir_alloc_page(mm->pgdir, USTACKTOP - 2 * PGSIZE, PTE_USER) != NULL);
++    assert(pgdir_alloc_page(mm->pgdir, USTACKTOP - 3 * PGSIZE, PTE_USER) != NULL);
++    assert(pgdir_alloc_page(mm->pgdir, USTACKTOP - 4 * PGSIZE, PTE_USER) != NULL);
++
+     //(5) set current process's mm, sr3, and set CR3 reg = physical addr of Page Directory
+     mm_count_inc(mm);
+     current->mm = mm;
+@@ -602,6 +644,11 @@
+      *          tf_eip should be the entry point of this binary program (elf->e_entry)
+      *          tf_eflags should be set to enable computer to produce Interrupt
+      */
++    tf->tf_cs = USER_CS;
++    tf->tf_ds = tf->tf_es = tf->tf_fs = tf->tf_ss = USER_DS;
++    tf->tf_esp = USTACKTOP;
++    tf->tf_eflags |= FL_IF;
++    tf->tf_eip = elf->e_entry;
+     ret = 0;
+ out:
+     return ret;
+@@ -659,7 +706,7 @@
+     return 0;
+ }
+ 
+-// do_wait - wait one OR any children with PROC_ZOMBIE state, and free memory space of kernel stack
++// do_wait - wait one OR any children to become PROC_ZOMBIE state, and free memory space of kernel stack
+ //         - proc struct of this child.
+ // NOTE: only after do_wait function, all resources of the child proces are free.
+ int
+@@ -683,8 +730,7 @@
+                 goto found;
+             }
+         }
+-    }
+-    else {
++    } else {
+         proc = current->cptr;
+         for (; proc != NULL; proc = proc->optr) {
+             haskid = 1;
+@@ -743,33 +789,33 @@
+ static int
+ kernel_execve(const char *name, unsigned char *binary, size_t size) {
+     int ret, len = strlen(name);
+-    asm volatile (
++    asm volatile(
+         "int %1;"
+-        : "=a" (ret)
+-        : "i" (T_SYSCALL), "0" (SYS_exec), "d" (name), "c" (len), "b" (binary), "D" (size)
++        : "=a"(ret)
++        : "i"(T_SYSCALL), "0"(SYS_exec), "d"(name), "c"(len), "b"(binary), "D"(size)
+         : "memory");
+     return ret;
+ }
+ 
+-#define __KERNEL_EXECVE(name, binary, size) ({                          \
+-            cprintf("kernel_execve: pid = %d, name = \"%s\".\n",        \
+-                    current->pid, name);                                \
+-            kernel_execve(name, binary, (size_t)(size));                \
+-        })
+-
+-#define KERNEL_EXECVE(x) ({                                             \
+-            extern unsigned char _binary_obj___user_##x##_out_start[],  \
+-                _binary_obj___user_##x##_out_size[];                    \
+-            __KERNEL_EXECVE(#x, _binary_obj___user_##x##_out_start,     \
+-                            _binary_obj___user_##x##_out_size);         \
+-        })
+-
+-#define __KERNEL_EXECVE2(x, xstart, xsize) ({                           \
+-            extern unsigned char xstart[], xsize[];                     \
+-            __KERNEL_EXECVE(#x, xstart, (size_t)xsize);                 \
+-        })
++#define __KERNEL_EXECVE(name, binary, size) ({           \
++    cprintf("kernel_execve: pid = %d, name = \"%s\".\n", \
++            current->pid, name);                         \
++    kernel_execve(name, binary, (size_t)(size));         \
++})
++
++#define KERNEL_EXECVE(x) ({                                    \
++    extern unsigned char _binary_obj___user_##x##_out_start[], \
++        _binary_obj___user_##x##_out_size[];                   \
++    __KERNEL_EXECVE(#x, _binary_obj___user_##x##_out_start,    \
++                    _binary_obj___user_##x##_out_size);        \
++})
++
++#define __KERNEL_EXECVE2(x, xstart, xsize) ({   \
++    extern unsigned char xstart[], xsize[];     \
++    __KERNEL_EXECVE(#x, xstart, (size_t)xsize); \
++})
+ 
+-#define KERNEL_EXECVE2(x, xstart, xsize)        __KERNEL_EXECVE2(x, xstart, xsize)
++#define KERNEL_EXECVE2(x, xstart, xsize) __KERNEL_EXECVE2(x, xstart, xsize)
+ 
+ // user_main - kernel thread used to exec a user program
+ static int
+@@ -807,14 +853,14 @@
+     return 0;
+ }
+ 
+-// proc_init - set up the first kernel thread idleproc "idle" by itself and 
++// proc_init - set up the first kernel thread idleproc "idle" by itself and
+ //           - create the second kernel thread init_main
+ void
+ proc_init(void) {
+     int i;
+ 
+     list_init(&proc_list);
+-    for (i = 0; i < HASH_LIST_SIZE; i ++) {
++    for (i = 0; i < HASH_LIST_SIZE; i++) {
+         list_init(hash_list + i);
+     }
+ 
+@@ -827,7 +873,7 @@
+     idleproc->kstack = (uintptr_t)bootstack;
+     idleproc->need_resched = 1;
+     set_proc_name(idleproc, "idle");
+-    nr_process ++;
++    nr_process++;
+ 
+     current = idleproc;
+ 
+@@ -852,4 +898,3 @@
+         }
+     }
+ }
+-
+diff '--color=auto' -urP lab5_origin/kern/process/proc.h lab5/kern/process/proc.h
+--- lab5_origin/kern/process/proc.h	2021-02-07 16:11:21.000000000 +0800
++++ lab5/kern/process/proc.h	2021-12-26 14:50:28.000000000 +0800
+@@ -19,7 +19,7 @@
+ // Don't need to save all the %fs etc. segment registers,
+ // because they are constant across kernel contexts.
+ // Save all the regular registers so we don't need to care
+-// which are caller save, but not the return register %eax.
++// which are callee-saved, but not the return register %eax.
+ // (Not saving %eax just simplifies the switching code.)
+ // The layout of context must match code in switch.S.
+ struct context {
+diff '--color=auto' -urP lab5_origin/kern/process/switch.S lab5/kern/process/switch.S
+--- lab5_origin/kern/process/switch.S	2021-02-07 16:11:21.000000000 +0800
++++ lab5/kern/process/switch.S	2021-12-28 21:03:59.000000000 +0800
+@@ -4,7 +4,7 @@
+ 
+     # save from's registers
+     movl 4(%esp), %eax          # eax points to from
+-    popl 0(%eax)                # save eip !popl
++    popl 0(%eax)                # save eip by popl
+     movl %esp, 4(%eax)
+     movl %ebx, 8(%eax)
+     movl %ecx, 12(%eax)
+diff '--color=auto' -urP lab5_origin/kern/schedule/sched.c lab5/kern/schedule/sched.c
+--- lab5_origin/kern/schedule/sched.c	2021-02-07 16:11:21.000000000 +0800
++++ lab5/kern/schedule/sched.c	2021-12-30 22:03:39.000000000 +0800
+@@ -26,7 +26,7 @@
+     bool intr_flag;
+     list_entry_t *le, *last;
+     struct proc_struct *next = NULL;
+-    local_intr_save(intr_flag);
++    local_intr_save(intr_flag);	//inhibit interrupt
+     {
+         current->need_resched = 0;
+         last = (current == idleproc) ? &proc_list : &(current->list_link);
+diff '--color=auto' -urP lab5_origin/kern/syscall/syscall.c lab5/kern/syscall/syscall.c
+--- lab5_origin/kern/syscall/syscall.c	2021-02-07 16:11:21.000000000 +0800
++++ lab5/kern/syscall/syscall.c	2021-12-27 13:04:25.000000000 +0800
+@@ -64,7 +64,7 @@
+     return 0;
+ }
+ 
+-static int (*syscalls[])(uint32_t arg[]) = {
++static int (*syscalls[])(uint32_t arg[]) = { 	//funtion ptr array
+     [SYS_exit]              sys_exit,
+     [SYS_fork]              sys_fork,
+     [SYS_wait]              sys_wait,
+@@ -90,7 +90,7 @@
+             arg[2] = tf->tf_regs.reg_ebx;
+             arg[3] = tf->tf_regs.reg_edi;
+             arg[4] = tf->tf_regs.reg_esi;
+-            tf->tf_regs.reg_eax = syscalls[num](arg);
++            tf->tf_regs.reg_eax = syscalls[num](arg);	//`syscalls[num]` is function ptr, and `(arg)` is argument
+             return ;
+         }
+     }
+diff '--color=auto' -urP lab5_origin/kern/trap/trap.c lab5/kern/trap/trap.c
+--- lab5_origin/kern/trap/trap.c	2021-02-07 16:11:21.000000000 +0800
++++ lab5/kern/trap/trap.c	2021-12-30 21:52:51.000000000 +0800
+@@ -1,25 +1,26 @@
+-#include <defs.h>
+-#include <mmu.h>
+-#include <memlayout.h>
+-#include <clock.h>
+-#include <trap.h>
+-#include <x86.h>
+-#include <stdio.h>
+ #include <assert.h>
++#include <clock.h>
+ #include <console.h>
+-#include <vmm.h>
+-#include <swap.h>
+-#include <kdebug.h>
+-#include <unistd.h>
+-#include <syscall.h>
++#include <defs.h>
+ #include <error.h>
++#include <kdebug.h>
++#include <memlayout.h>
++#include <mmu.h>
+ #include <sched.h>
++#include <stdio.h>
++#include <swap.h>
+ #include <sync.h>
++#include <syscall.h>
++#include <trap.h>
++#include <unistd.h>
++#include <vmm.h>
++#include <x86.h>
+ 
+ #define TICK_NUM 100
+ 
+-static void print_ticks() {
+-    cprintf("%d ticks\n",TICK_NUM);
++static void
++print_ticks() {
++    cprintf("%d ticks\n", TICK_NUM);
+ #ifdef DEBUG_GRADE
+     cprintf("End of Test.\n");
+     panic("EOT: kernel seems ok.");
+@@ -35,14 +36,13 @@
+ static struct gatedesc idt[256] = {{0}};
+ 
+ static struct pseudodesc idt_pd = {
+-    sizeof(idt) - 1, (uintptr_t)idt
+-};
++    sizeof(idt) - 1, (uintptr_t)idt};
+ 
+ /* idt_init - initialize IDT to each of the entry points in kern/trap/vectors.S */
+ void
+ idt_init(void) {
+-     /* LAB1 YOUR CODE : STEP 2 */
+-     /* (1) Where are the entry addrs of each Interrupt Service Routine (ISR)?
++    /* LAB1 YOUR CODE : STEP 2 */
++    /* (1) Where are the entry addrs of each Interrupt Service Routine (ISR)?
+       *     All ISR's entry addrs are stored in __vectors. where is uintptr_t __vectors[] ?
+       *     __vectors[] is in kern/trap/vector.S which is produced by tools/vector.c
+       *     (try "make" command in lab1, then you will find vector.S in kern/trap DIR)
+@@ -53,14 +53,22 @@
+       *     You don't know the meaning of this instruction? just google it! and check the libs/x86.h to know more.
+       *     Notice: the argument of lidt is idt_pd. try to find it!
+       */
+-     /* LAB5 YOUR CODE */ 
+-     //you should update your lab1 code (just add ONE or TWO lines of code), let user app to use syscall to get the service of ucore
+-     //so you should setup the syscall interrupt gate in here
++    /* LAB5 YOUR CODE */
++    //you should update your lab1 code (just add ONE or TWO lines of code), let user app to use syscall to get the service of ucore
++    //so you should setup the syscall interrupt gate in here
++    extern uintptr_t __vectors[];
++    int i;
++    for (i = 0; i < sizeof(idt) / sizeof(struct gatedesc); i++) {
++        SETGATE(idt[i], 0, GD_KTEXT, __vectors[i], DPL_KERNEL);
++    }
++    SETGATE(idt[T_SWITCH_TOK], 0, GD_KTEXT, __vectors[T_SWITCH_TOK], DPL_USER);
++    SETGATE(idt[SYS_CALL], 0, GD_KTEXT, __vectors[SYS_CALL], DPL_USER);
++    lidt(&idt_pd);
+ }
+ 
+ static const char *
+ trapname(int trapno) {
+-    static const char * const excnames[] = {
++    static const char *const excnames[] = {
+         "Divide error",
+         "Debug",
+         "Non-Maskable Interrupt",
+@@ -80,10 +88,9 @@
+         "x87 FPU Floating-Point Error",
+         "Alignment Check",
+         "Machine-Check",
+-        "SIMD Floating-Point Exception"
+-    };
++        "SIMD Floating-Point Exception"};
+ 
+-    if (trapno < sizeof(excnames)/sizeof(const char * const)) {
++    if (trapno < sizeof(excnames) / sizeof(const char *const)) {
+         return excnames[trapno];
+     }
+     if (trapno >= IRQ_OFFSET && trapno < IRQ_OFFSET + 16) {
+@@ -99,9 +106,30 @@
+ }
+ 
+ static const char *IA32flags[] = {
+-    "CF", NULL, "PF", NULL, "AF", NULL, "ZF", "SF",
+-    "TF", "IF", "DF", "OF", NULL, NULL, "NT", NULL,
+-    "RF", "VM", "AC", "VIF", "VIP", "ID", NULL, NULL,
++    "CF",
++    NULL,
++    "PF",
++    NULL,
++    "AF",
++    NULL,
++    "ZF",
++    "SF",
++    "TF",
++    "IF",
++    "DF",
++    "OF",
++    NULL,
++    NULL,
++    "NT",
++    NULL,
++    "RF",
++    "VM",
++    "AC",
++    "VIF",
++    "VIP",
++    "ID",
++    NULL,
++    NULL,
+ };
+ 
+ void
+@@ -119,7 +147,7 @@
+     cprintf("  flag 0x%08x ", tf->tf_eflags);
+ 
+     int i, j;
+-    for (i = 0, j = 1; i < sizeof(IA32flags) / sizeof(IA32flags[0]); i ++, j <<= 1) {
++    for (i = 0, j = 1; i < sizeof(IA32flags) / sizeof(IA32flags[0]); i++, j <<= 1) {
+         if ((tf->tf_eflags & j) && IA32flags[i] != NULL) {
+             cprintf("%s,", IA32flags[i]);
+         }
+@@ -160,15 +188,14 @@
+ static int
+ pgfault_handler(struct trapframe *tf) {
+     extern struct mm_struct *check_mm_struct;
+-    if(check_mm_struct !=NULL) { //used for test check_swap
+-            print_pgfault(tf);
+-        }
++    if (check_mm_struct != NULL) {  //used for test check_swap
++        print_pgfault(tf);
++    }
+     struct mm_struct *mm;
+     if (check_mm_struct != NULL) {
+         assert(current == idleproc);
+         mm = check_mm_struct;
+-    }
+-    else {
++    } else {
+         if (current == NULL) {
+             print_trapframe(tf);
+             print_pgfault(tf);
+@@ -186,71 +213,74 @@
+ trap_dispatch(struct trapframe *tf) {
+     char c;
+ 
+-    int ret=0;
++    int ret = 0;
+ 
+     switch (tf->tf_trapno) {
+-    case T_PGFLT:  //page fault
+-        if ((ret = pgfault_handler(tf)) != 0) {
+-            print_trapframe(tf);
+-            if (current == NULL) {
+-                panic("handle pgfault failed. ret=%d\n", ret);
+-            }
+-            else {
+-                if (trap_in_kernel(tf)) {
+-                    panic("handle pgfault failed in kernel mode. ret=%d\n", ret);
++        case T_PGFLT:  //page fault
++            if ((ret = pgfault_handler(tf)) != 0) {
++                print_trapframe(tf);
++                if (current == NULL) {
++                    panic("handle pgfault failed. ret=%d\n", ret);
++                } else {
++                    if (trap_in_kernel(tf)) {
++                        panic("handle pgfault failed in kernel mode. ret=%d\n", ret);
++                    }
++                    cprintf("killed by kernel.\n");
++                    panic("handle user mode pgfault failed. ret=%d\n", ret);
++                    do_exit(-E_KILLED);
+                 }
+-                cprintf("killed by kernel.\n");
+-                panic("handle user mode pgfault failed. ret=%d\n", ret); 
+-                do_exit(-E_KILLED);
+             }
+-        }
+-        break;
+-    case T_SYSCALL:
+-        syscall();
+-        break;
+-    case IRQ_OFFSET + IRQ_TIMER:
++            break;
++        case T_SYSCALL:
++            syscall();
++            break;
++        case IRQ_OFFSET + IRQ_TIMER:
+ #if 0
+     LAB3 : If some page replacement algorithm(such as CLOCK PRA) need tick to change the priority of pages,
+-    then you can add code here. 
++    then you can add code here.
+ #endif
+-        /* LAB1 YOUR CODE : STEP 3 */
+-        /* handle the timer interrupt */
+-        /* (1) After a timer interrupt, you should record this event using a global variable (increase it), such as ticks in kern/driver/clock.c
++            /* LAB1 YOUR CODE : STEP 3 */
++            /* handle the timer interrupt */
++            /* (1) After a timer interrupt, you should record this event using a global variable (increase it), such as ticks in kern/driver/clock.c
+          * (2) Every TICK_NUM cycle, you can print some info using a funciton, such as print_ticks().
+          * (3) Too Simple? Yes, I think so!
+          */
+-        /* LAB5 YOUR CODE */
+-        /* you should upate you lab1 code (just add ONE or TWO lines of code):
++            /* LAB5 YOUR CODE */
++            /* you should upate you lab1 code (just add ONE or TWO lines of code):
+          *    Every TICK_NUM cycle, you should set current process's current->need_resched = 1
+          */
+-  
+-        break;
+-    case IRQ_OFFSET + IRQ_COM1:
+-        c = cons_getc();
+-        cprintf("serial [%03d] %c\n", c, c);
+-        break;
+-    case IRQ_OFFSET + IRQ_KBD:
+-        c = cons_getc();
+-        cprintf("kbd [%03d] %c\n", c, c);
+-        break;
+-    //LAB1 CHALLENGE 1 : YOUR CODE you should modify below codes.
+-    case T_SWITCH_TOU:
+-    case T_SWITCH_TOK:
+-        panic("T_SWITCH_** ??\n");
+-        break;
+-    case IRQ_OFFSET + IRQ_IDE1:
+-    case IRQ_OFFSET + IRQ_IDE2:
+-        /* do nothing */
+-        break;
+-    default:
+-        print_trapframe(tf);
+-        if (current != NULL) {
+-            cprintf("unhandled trap.\n");
+-            do_exit(-E_KILLED);
+-        }
+-        // in kernel, it must be a mistake
+-        panic("unexpected trap in kernel.\n");
+-
++            ticks++;
++            if (ticks % TICK_NUM == 0) {
++                print_ticks();
++                assert(current != NULL);
++                current->need_resched = 1;
++            }
++            break;
++        case IRQ_OFFSET + IRQ_COM1:
++            c = cons_getc();
++            cprintf("serial [%03d] %c\n", c, c);
++            break;
++        case IRQ_OFFSET + IRQ_KBD:
++            c = cons_getc();
++            cprintf("kbd [%03d] %c\n", c, c);
++            break;
++        //LAB1 CHALLENGE 1 : YOUR CODE you should modify below codes.
++        case T_SWITCH_TOU:
++        case T_SWITCH_TOK:
++            panic("T_SWITCH_** ??\n");
++            break;
++        case IRQ_OFFSET + IRQ_IDE1:
++        case IRQ_OFFSET + IRQ_IDE2:
++            /* do nothing */
++            break;
++        default:
++            print_trapframe(tf);
++            if (current != NULL) {
++                cprintf("unhandled trap.\n");
++                do_exit(-E_KILLED);
++            }
++            // in kernel, it must be a mistake
++            panic("unexpected trap in kernel.\n");
+     }
+ }
+ 
+@@ -265,16 +295,15 @@
+     // used for previous projects
+     if (current == NULL) {
+         trap_dispatch(tf);
+-    }
+-    else {
++    } else {
+         // keep a trapframe chain in stack
+         struct trapframe *otf = current->tf;
+         current->tf = tf;
+-    
++
+         bool in_kernel = trap_in_kernel(tf);
+-    
++
+         trap_dispatch(tf);
+-    
++
+         current->tf = otf;
+         if (!in_kernel) {
+             if (current->flags & PF_EXITING) {
+@@ -286,4 +315,3 @@
+         }
+     }
+ }
+-
+diff '--color=auto' -urP lab5_origin/kern/trap/trap.h lab5/kern/trap/trap.h
+--- lab5_origin/kern/trap/trap.h	2021-02-07 16:11:21.000000000 +0800
++++ lab5/kern/trap/trap.h	2021-12-27 19:13:10.000000000 +0800
+@@ -38,6 +38,7 @@
+ #define IRQ_ERROR               19
+ #define IRQ_SPURIOUS            31
+ 
++#define SYS_CALL 0x80
+ /* *
+  * These are arbitrarily chosen, but with care not to overlap
+  * processor defined exceptions or interrupt vectors.

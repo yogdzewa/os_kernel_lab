@@ -57,6 +57,20 @@ idt_init(void) {
      /* LAB5 YOUR CODE */ 
      //you should update your lab1 code (just add ONE or TWO lines of code), let user app to use syscall to get the service of ucore
      //so you should setup the syscall interrupt gate in here
+     extern uintptr_t __vectors[];
+    int i;
+    for (i = 0; i < sizeof(idt) / sizeof(struct gatedesc); i ++)
+        // 目标idt项为idt[i]
+        // 该idt项为内核代码，所以使用GD_KTEXT段选择子
+        // 中断处理程序的入口地址存放于__vectors[i]
+        // 特权级为DPL_KERNEL
+        SETGATE(idt[i], 0, GD_KTEXT, __vectors[i], DPL_KERNEL);
+	// 设置从用户态转为内核态的中断的特权级为DPL_USER
+    SETGATE(idt[T_SWITCH_TOK], 0, GD_KTEXT, __vectors[T_SWITCH_TOK], DPL_USER);
+    // Lab5 code
+    SETGATE(idt[T_SYSCALL], 1, GD_KTEXT, __vectors[T_SYSCALL], DPL_USER);
+    // 加载该IDT
+    lidt(&idt_pd); 
 }
 
 static const char *
@@ -229,6 +243,9 @@ trap_dispatch(struct trapframe *tf) {
          * IMPORTANT FUNCTIONS:
 	     * sched_class_proc_tick
          */
+        ticks++;
+        assert(current != NULL);
+        sched_class_proc_tick(current);
         break;
     case IRQ_OFFSET + IRQ_COM1:
         c = cons_getc();

@@ -202,7 +202,7 @@ dup_mmap(struct mm_struct *to, struct mm_struct *from) {
 
         insert_vma_struct(to, nvma);
 
-        bool share = 0;
+        bool share = 1;
         if (copy_range(to->pgdir, from->pgdir, vma->vm_start, vma->vm_end, share) != 0) {
             return -E_NO_MEM;
         }
@@ -481,24 +481,38 @@ do_pgfault(struct mm_struct *mm, uint32_t error_code, uintptr_t addr) {
 		  2) *ptep & PTE_P == 0 & but *ptep!=0, it means this pte is a  swap entry.
 		     We should add the LAB3's results here.
      */
-        if (swap_init_ok) {
-            struct Page *page = NULL;
-            //(1) According to the mm AND addr, try to load the content of right disk page
-            //    into the memory which page managed.
-            //(2) According to the mm, addr AND page, setup the map of phy addr <---> logical addr
-            //(3) make the page swappable.
-            //(4) [NOTICE]: you myabe need to update your lab3's implementation for LAB5's normal execution.
-            if ((ret = swap_in(mm, addr, &page)) != 0) {
-                cprintf("swap_in in do_pgfault failed\n");
+        struct Page *page = NULL;
+        if (*ptep & PTE_P) {
+            cprintf("\n\nCOW: ptep 0x%x, pte 0x%x\n", ptep, *ptep);
+            page = pte2page(*ptep);
+            if (page_ref(page) > 1) {
+                struct Page *newPage = pgdir_alloc_page(mm->pgdir, addr, perm);
+                void *kva_src = page2kva(page);
+                void *kva_dst = page2kva(newPage);
+                memcpy(kva_dst, kva_src, PGSIZE);
+            }
+            else
+                page_insert(mm->pgdir, page, addr, perm);
+        } else {
+            if (swap_init_ok) {
+                //struct Page *page = NULL;
+                //(1) According to the mm AND addr, try to load the content of right disk page
+                //    into the memory which page managed.
+                //(2) According to the mm, addr AND page, setup the map of phy addr <---> logical addr
+                //(3) make the page swappable.
+                //(4) [NOTICE]: you myabe need to update your lab3's implementation for LAB5's normal execution.
+                if ((ret = swap_in(mm, addr, &page)) != 0) {
+                    cprintf("swap_in in do_pgfault failed\n");
+                    goto failed;
+                }
+                page_insert(mm->pgdir, page, addr, perm);
+            } else {
+                cprintf("no swap_init_ok but ptep is %x, failed\n", *ptep);
                 goto failed;
             }
-            page_insert(mm->pgdir, page, addr, perm);
-            swap_map_swappable(mm, addr, page, 1);
-            page->pra_vaddr = addr;
-        } else {
-            cprintf("no swap_init_ok but ptep is %x, failed\n", *ptep);
-            goto failed;
         }
+        swap_map_swappable(mm, addr, page, 1);
+        page->pra_vaddr = addr;
     }
 #endif
     ret = 0;

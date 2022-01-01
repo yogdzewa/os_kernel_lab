@@ -38,6 +38,9 @@ static void
 stride_init(struct run_queue *rq) {
     list_init(&(rq->run_list));
     // 注意这里不要使用skew_heap_init(rq->lab6_run_pool)
+    /* 因为lab6_run_pool是一个指针, 初始默认不指向任何东西, 而上面这个函数会对未初始化的地址
+     * 解引用设置left right和parent为NULL
+     */
     rq->lab6_run_pool = NULL;
     rq->proc_num = 0;
      /* LAB6: YOUR CODE 
@@ -62,8 +65,6 @@ stride_init(struct run_queue *rq) {
  */
 static void
 stride_enqueue(struct run_queue *rq, struct proc_struct *proc) {
-    //assert(list_empty(&(proc->run_link)));
-    //list_add_before(&(rq->run_list), &(proc->run_link));
     rq->lab6_run_pool = skew_heap_insert(rq->lab6_run_pool, &(proc->lab6_run_pool), proc_stride_comp_f);
     if (proc->time_slice == 0 || proc->time_slice > rq->max_time_slice) {
         proc->time_slice = rq->max_time_slice;
@@ -91,10 +92,7 @@ stride_enqueue(struct run_queue *rq, struct proc_struct *proc) {
  */
 static void
 stride_dequeue(struct run_queue *rq, struct proc_struct *proc) {
-    //assert(!list_empty(&(proc->run_link)) && proc->rq == rq);
-    //list_del_init(&(proc->run_link));
     rq->lab6_run_pool = skew_heap_remove(rq->lab6_run_pool, &(proc->lab6_run_pool), proc_stride_comp_f);
-    //skew_heap_init(&(proc->lab6_run_pool));
     rq->proc_num --;
      /* LAB6: YOUR CODE 
       * (1) remove the proc from rq correctly
@@ -118,9 +116,9 @@ stride_dequeue(struct run_queue *rq, struct proc_struct *proc) {
  */
 static struct proc_struct *
 stride_pick_next(struct run_queue *rq) {
-    skew_heap_entry_t* she = rq->lab6_run_pool;
-    if (she != NULL) {
-        struct proc_struct* p = le2proc(she, lab6_run_pool);
+    skew_heap_entry_t* min = rq->lab6_run_pool;
+    if (min != NULL) {
+        struct proc_struct* p = le2proc(min, lab6_run_pool);
         p->lab6_stride += BIG_STRIDE / p->lab6_priority;
         return p;
     }

@@ -45,7 +45,7 @@ static struct run_queue __rq;
 void
 sched_init(void) {
     list_init(&timer_list);
-
+    extern struct sched_class default_sched_class1;
     sched_class = &default_sched_class;
 
     rq = &__rq;
@@ -79,10 +79,11 @@ void
 schedule(void) {
     bool intr_flag;
     struct proc_struct *next;
-    local_intr_save(intr_flag);
+    local_intr_save(intr_flag);  //inhibit interrupt
     {
         current->need_resched = 0;
         if (current->state == PROC_RUNNABLE) {
+            //change from list search to function
             sched_class_enqueue(current);
         }
         if ((next = sched_class_pick_next()) != NULL) {

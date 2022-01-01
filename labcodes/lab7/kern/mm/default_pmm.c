@@ -116,7 +116,8 @@ default_init_memmap(struct Page *base, size_t n) {
     base->property = n;
     SetPageProperty(base);
     nr_free += n;
-    list_add(&free_list, &(base->page_link));
+    list_add_before(&free_list, &(base->page_link));
+    // list_add(&free_list, &(base->page_link));
 }
 
 static struct Page *
@@ -135,12 +136,15 @@ default_alloc_pages(size_t n) {
         }
     }
     if (page != NULL) {
-        list_del(&(page->page_link));
         if (page->property > n) {
             struct Page *p = page + n;
             p->property = page->property - n;
-            list_add(&free_list, &(p->page_link));
+            list_add_after(&(page->page_link), &(p->page_link));
+            //---------------------------------
+            SetPageProperty(p);
+            //---------------------------------
     }
+        list_del(&(page->page_link));
         nr_free -= n;
         ClearPageProperty(page);
     }
@@ -151,31 +155,37 @@ static void
 default_free_pages(struct Page *base, size_t n) {
     assert(n > 0);
     struct Page *p = base;
-    for (; p != base + n; p ++) {
+    for (; p != base + n; p++) {
         assert(!PageReserved(p) && !PageProperty(p));
         p->flags = 0;
         set_page_ref(p, 0);
     }
     base->property = n;
     SetPageProperty(base);
-    list_entry_t *le = list_next(&free_list);
+    list_entry_t *le = list_next(&free_list), *sp = NULL;
+    bool flag = 0;
     while (le != &free_list) {
+        // sp = le;
         p = le2page(le, page_link);
-        le = list_next(le);
         if (base + base->property == p) {
             base->property += p->property;
             ClearPageProperty(p);
             list_del(&(p->page_link));
-        }
-        else if (p + p->property == base) {
+        } else if (p + p->property == base) {
             p->property += base->property;
+            sp = list_prev(le);
+            flag = 1;
             ClearPageProperty(base);
             base = p;
             list_del(&(p->page_link));
         }
+        if (p + p->property < base)
+            sp = le, flag = 1;
+        le = list_next(le);
     }
     nr_free += n;
-    list_add(&free_list, &(base->page_link));
+    //cprintf("%x %x\n", sp, &free_list);
+    list_add((flag ? sp : &free_list), &(base->page_link));
 }
 
 static size_t

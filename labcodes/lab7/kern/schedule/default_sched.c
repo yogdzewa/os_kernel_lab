@@ -14,6 +14,7 @@ static void
 RR_enqueue(struct run_queue *rq, struct proc_struct *proc) {
     assert(list_empty(&(proc->run_link)));
     list_add_before(&(rq->run_list), &(proc->run_link));
+    //correct the enqueue proc's time slice
     if (proc->time_slice == 0 || proc->time_slice > rq->max_time_slice) {
         proc->time_slice = rq->max_time_slice;
     }
@@ -47,7 +48,7 @@ RR_proc_tick(struct run_queue *rq, struct proc_struct *proc) {
     }
 }
 
-struct sched_class default_sched_class = {
+struct sched_class default_sched_class1 = {
     .name = "RR_scheduler",
     .init = RR_init,
     .enqueue = RR_enqueue,

@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-
+//this is matrix multiplication simulation
 #define MATSIZE     10
 
 static int mata[MATSIZE][MATSIZE];
@@ -18,7 +18,7 @@ work(unsigned int times) {
         }
     }
 
-    yield();
+    yield();//switch to another process
 
     cprintf("pid %d is running (%d times)!.\n", getpid(), times);
 
@@ -54,7 +54,7 @@ main(void) {
             srand(i * i);
             int times = (((unsigned int)rand()) % total);
             times = (times * times + 10) * 100;
-            work(times);
+            work(times);    //do random times
         }
         if (pids[i] < 0) {
             goto failed;

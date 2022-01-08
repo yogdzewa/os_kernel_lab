@@ -5,7 +5,8 @@
 /* In [OS CONCEPT] 7.7 section, the accurate define and approximate implementation of MONITOR was introduced.
  * INTRODUCTION:
  *  Monitors were invented by C. A. R. Hoare and Per Brinch Hansen, and were first implemented in Brinch Hansen's
- *  Concurrent Pascal language. Generally, a monitor is a language construct and the compiler usually enforces mutual exclusion. Compare this with semaphores, which are usually an OS construct.
+ *  Concurrent Pascal language. Generally, a monitor is a language construct and the compiler usually enforces mutual exclusion. 
+ *  Compare this with semaphores, which are usually an OS construct.
  * DEFNIE & CHARACTERISTIC:
  *  A monitor is a collection of procedures, variables, and data structures grouped together.
  *  Processes can call the monitor procedures but cannot access the internal data structures.
@@ -19,7 +20,8 @@
  *            on some systems the signal must be the last statement executed inside the monitor.
  *            on some systems the old process will block until the monitor is available again.
  *            on some systems the new process (the one unblocked by the signal) will remain blocked until the monitor is available again.
- *   If a condition variable is signaled with nobody waiting, the signal is lost. Compare this with semaphores, in which a signal will allow a process that executes a wait in the future to no block.
+ *   If a condition variable is signaled with nobody waiting, the signal is lost. Compare this with semaphores, in which 
+ * a signal will allow a process that executes a wait in the future to no block.
  *   You should not think of a condition variable as a variable in the traditional sense.
  *     It does not have a value.
  *     Think of it as an object in the OOP sense.

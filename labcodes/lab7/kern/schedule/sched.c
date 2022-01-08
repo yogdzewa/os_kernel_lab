@@ -157,6 +157,7 @@ run_timer_list(void) {
             while (timer->expires == 0) {
                 le = list_next(le);
                 struct proc_struct *proc = timer->proc;
+                //a small check to wait_state
                 if (proc->wait_state != 0) {
                     assert(proc->wait_state & WT_INTERRUPTED);
                 }

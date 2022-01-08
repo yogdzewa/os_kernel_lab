@@ -37,7 +37,7 @@ static int
 fd_array_alloc(int fd, struct file **file_store) {
 //    panic("debug");
     struct file *file = get_fd_array();
-    if (fd == NO_FD) {
+    if (fd == NO_FD) { ///任意找一个file
         for (fd = 0; fd < FILES_STRUCT_NENTRY; fd ++, file ++) {
             if (file->status == FD_NONE) {
                 goto found;
@@ -45,7 +45,7 @@ fd_array_alloc(int fd, struct file **file_store) {
         }
         return -E_MAX_OPEN;
     }
-    else {
+    else { 	///否则找指定fd的file
         if (testfd(fd)) {
             file += fd;
             if (file->status == FD_NONE) {
@@ -56,8 +56,8 @@ fd_array_alloc(int fd, struct file **file_store) {
         return -E_INVAL;
     }
 found:
-    assert(fopen_count(file) == 0);
-    file->status = FD_INIT, file->node = NULL;
+    assert(fopen_count(file) == 0);	
+    file->status = FD_INIT, file->node = NULL; 
     *file_store = file;
     return 0;
 }
@@ -168,6 +168,7 @@ file_open(char *path, uint32_t open_flags) {
 
     int ret;
     struct file *file;
+	///找一个空的fd和file绑定
     if ((ret = fd_array_alloc(NO_FD, &file)) != 0) {
         return ret;
     }
@@ -214,23 +215,23 @@ file_read(int fd, void *base, size_t len, size_t *copied_store) {
     int ret;
     struct file *file;
     *copied_store = 0;
-    if ((ret = fd2file(fd, &file)) != 0) {
+    if ((ret = fd2file(fd, &file)) != 0) {	//从current中取出fd
         return ret;
     }
-    if (!file->readable) {
+    if (!file->readable) {//权限检查
         return -E_INVAL;
     }
-    fd_array_acquire(file);
+    fd_array_acquire(file);//权限检查以及打开计数加一
 
-    struct iobuf __iob, *iob = iobuf_init(&__iob, base, len, file->pos);
+    struct iobuf __iob, *iob = iobuf_init(&__iob, base, len, file->pos);//buf的初始化函数
     ret = vop_read(file->node, iob);
 
     size_t copied = iobuf_used(iob);
     if (file->status == FD_OPENED) {
-        file->pos += copied;
+        file->pos += copied;//移动文件读取指针
     }
     *copied_store = copied;
-    fd_array_release(file);
+    fd_array_release(file);//打开计数减一(vfs and sfs)
     return ret;
 }
 

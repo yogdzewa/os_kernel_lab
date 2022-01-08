@@ -30,12 +30,12 @@ vfs_open(char *path, uint32_t open_flags, struct inode **node_store) {
 
     int ret; 
     struct inode *node;
-    bool excl = (open_flags & O_EXCL) != 0;
+    bool excl = (open_flags & O_EXCL) != 0;///??为什么不直接与运算就完事?等会尝试更改
     bool create = (open_flags & O_CREAT) != 0;
     ret = vfs_lookup(path, &node);
 
     if (ret != 0) {
-        if (ret == -16 && (create)) {
+        if (ret == -16 && (create)) {	///尝试改为-E_NOENT
             char *name;
             struct inode *dir;
             if ((ret = vfs_lookup_parent(path, &dir, &name)) != 0) {

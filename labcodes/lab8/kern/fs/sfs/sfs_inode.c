@@ -260,7 +260,8 @@ sfs_bmap_get_nolock(struct sfs_fs *sfs, struct sfs_inode *sin, uint32_t index, b
     uint32_t ent, ino;
 	// the index of disk block is in the fist SFS_NDIRECT  direct blocks
     if (index < SFS_NDIRECT) {
-        if ((ino = din->direct[index]) == 0 && create) {
+        if ((ino = din->direct[index]) == 0 && create) {	//*this statement complete assigning ino 
+															//*and judge whether ino is empty && can be created
             if ((ret = sfs_block_alloc(sfs, &ino)) != 0) {
                 return ret;
             }
@@ -286,8 +287,10 @@ sfs_bmap_get_nolock(struct sfs_fs *sfs, struct sfs_inode *sin, uint32_t index, b
 		panic ("sfs_bmap_get_nolock - index out of range");
 	}
 out:
-    assert(ino == 0 || sfs_block_inuse(sfs, ino));
-    *ino_store = ino;
+    //*(Chinese is a terrible language on computer)
+	//*a simple check
+	assert(ino == 0 || sfs_block_inuse(sfs, ino));
+    *ino_store = ino;	
     return 0;
 }
 
@@ -356,7 +359,7 @@ sfs_bmap_load_nolock(struct sfs_fs *sfs, struct sfs_inode *sin, uint32_t index, 
     assert(index <= din->blocks);
     int ret;
     uint32_t ino;
-    bool create = (index == din->blocks);
+    bool create = (index == din->blocks);//looks like can add each time by one block
     if ((ret = sfs_bmap_get_nolock(sfs, sin, index, create, &ino)) != 0) {
         return ret;
     }
@@ -403,7 +406,7 @@ sfs_dirent_read_nolock(struct sfs_fs *sfs, struct sfs_inode *sin, int slot, stru
         return ret;
     }
     assert(sfs_block_inuse(sfs, ino));
-	// read the content of file entry in the disk block 
+	// copy the content of file entry in the disk block 
     if ((ret = sfs_rbuf(sfs, entry, sizeof(struct sfs_disk_entry), ino, 0)) != 0) {
         return ret;
     }
@@ -440,23 +443,23 @@ sfs_dirent_read_nolock(struct sfs_fs *sfs, struct sfs_inode *sin, int slot, stru
 static int
 sfs_dirent_search_nolock(struct sfs_fs *sfs, struct sfs_inode *sin, const char *name, uint32_t *ino_store, int *slot, int *empty_slot) {
     assert(strlen(name) <= SFS_MAX_FNAME_LEN);
-    struct sfs_disk_entry *entry;
-    if ((entry = kmalloc(sizeof(struct sfs_disk_entry))) == NULL) {
+    struct sfs_disk_entry *entry;	//only used in this file 
+	if ((entry = kmalloc(sizeof(struct sfs_disk_entry))) == NULL) {
         return -E_NO_MEM;
     }
-
+	
 #define set_pvalue(x, v)            do { if ((x) != NULL) { *(x) = (v); } } while (0)
     int ret, i, nslots = sin->din->blocks;
     set_pvalue(empty_slot, nslots);
     for (i = 0; i < nslots; i ++) {
         if ((ret = sfs_dirent_read_nolock(sfs, sin, i, entry)) != 0) {
-            goto out;
+            goto out;	//出错才会跳转
         }
         if (entry->ino == 0) {
             set_pvalue(empty_slot, i);
             continue ;
         }
-        if (strcmp(name, entry->name) == 0) {
+        if (strcmp(name, entry->name) == 0) {//two names are the same
             set_pvalue(slot, i);
             set_pvalue(ino_store, entry->ino);
             goto out;
@@ -541,7 +544,7 @@ sfs_close(struct inode *node) {
 }
 
 /*  
- * sfs_io_nolock - Rd/Wr a file contentfrom offset position to offset+ length  disk blocks<-->buffer (in memroy)
+ * sfs_io_nolock - Rd/Wr a file content from offset position to offset+length disk blocks<-->buffer (in memroy)
  * @sfs:      sfs file system
  * @sin:      sfs inode in memory
  * @buf:      the buffer Rd/Wr
@@ -553,40 +556,40 @@ static int
 sfs_io_nolock(struct sfs_fs *sfs, struct sfs_inode *sin, void *buf, off_t offset, size_t *alenp, bool write) {
     struct sfs_disk_inode *din = sin->din;
     assert(din->type != SFS_TYPE_DIR);
-    off_t endpos = offset + *alenp, blkoff;
+    off_t endpos = offset + *alenp, blkoff;///endpos感觉恒等于4KB??
     *alenp = 0;
 	// calculate the Rd/Wr end position
     if (offset < 0 || offset >= SFS_MAX_FILE_SIZE || offset > endpos) {
         return -E_INVAL;
     }
-    if (offset == endpos) {
+    if (offset == endpos) {///这是怎么发生的?
         return 0;
     }
     if (endpos > SFS_MAX_FILE_SIZE) {
         endpos = SFS_MAX_FILE_SIZE;
     }
-    if (!write) {
-        if (offset >= din->size) {
+    if (!write) {///如果是read
+        if (offset >= din->size) {///读完文件了
             return 0;
         }
-        if (endpos > din->size) {
+        if (endpos > din->size) {///不用读那么长, 只要din->size即可
             endpos = din->size;
         }
     }
-
+	///下面这几行又是什么神奇操作, 这通用接口写的也太绝了
     int (*sfs_buf_op)(struct sfs_fs *sfs, void *buf, size_t len, uint32_t blkno, off_t offset);
     int (*sfs_block_op)(struct sfs_fs *sfs, void *buf, uint32_t blkno, uint32_t nblks);
     if (write) {
         sfs_buf_op = sfs_wbuf, sfs_block_op = sfs_wblock;
     }
-    else {
+    else {///如果是read, 要换成 把1个block读到buf 和 把多个block读到buf
         sfs_buf_op = sfs_rbuf, sfs_block_op = sfs_rblock;
     }
 
     int ret = 0;
     size_t size, alen = 0;
     uint32_t ino;
-    uint32_t blkno = offset / SFS_BLKSIZE;          // The NO. of Rd/Wr begin block
+    uint32_t blkno = offset / SFS_BLKSIZE;          // The NO. of Rd/Wr begin block ///BUFFER不都是4KB的吗??
     uint32_t nblks = endpos / SFS_BLKSIZE - blkno;  // The size of Rd/Wr blocks
 
   //LAB8:EXERCISE1 YOUR CODE HINT: call sfs_bmap_load_nolock, sfs_rbuf, sfs_rblock,etc. read different kind of blocks in file
@@ -600,8 +603,8 @@ sfs_io_nolock(struct sfs_fs *sfs, struct sfs_inode *sin, void *buf, off_t offset
 	 *       NOTICE: useful function: sfs_bmap_load_nolock, sfs_buf_op	
 	*/
 out:
-    *alenp = alen;
-    if (offset + alen > sin->din->size) {
+    *alenp = alen;///上面要完成alen的赋值, 即真实的读取字节数目
+    if (offset + alen > sin->din->size) {///好像是用于write的
         sin->din->size = offset + alen;
         sin->dirty = 1;
     }
@@ -614,8 +617,8 @@ out:
  */
 static inline int
 sfs_io(struct inode *node, struct iobuf *iob, bool write) {
-    struct sfs_fs *sfs = fsop_info(vop_fs(node), sfs);
-    struct sfs_inode *sin = vop_info(node, sfs_inode);
+    struct sfs_fs *sfs = fsop_info(vop_fs(node), sfs);//vop_fs就是node->fs
+    struct sfs_inode *sin = vop_info(node, sfs_inode);//取出node->in_info(为第二个参数的类型)
     int ret;
     lock_sin(sin);
     {
@@ -970,7 +973,7 @@ static const struct inode_ops sfs_node_dirops = {
     .vop_gettype                    = sfs_gettype,
     .vop_lookup                     = sfs_lookup,
 };
-/// The sfs specific FILE operations correspond to the abstract operations on a inode.
+// The sfs specific FILE operations correspond to the abstract operations on a inode.
 static const struct inode_ops sfs_node_fileops = {
     .vop_magic                      = VOP_MAGIC,
     .vop_open                       = sfs_openfile,

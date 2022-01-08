@@ -8,7 +8,7 @@
 
 /* You should define the BigStride constant here*/
 /* LAB6: YOUR CODE */
-#define BIG_STRIDE    /* you should give a value, and is ??? */
+#define BIG_STRIDE ((uint32_t) -1)   /* you should give a value, and is ??? */
 
 /* The compare function for two skew_heap_node_t's and the
  * corresponding procs*/
@@ -36,6 +36,13 @@ proc_stride_comp_f(void *a, void *b)
  */
 static void
 stride_init(struct run_queue *rq) {
+    list_init(&(rq->run_list));
+    // 注意这里不要使用skew_heap_init(rq->lab6_run_pool)
+    /* 因为lab6_run_pool是一个指针, 初始默认不指向任何东西, 而上面这个函数会对未初始化的地址
+     * 解引用设置left right和parent为NULL
+     */
+    rq->lab6_run_pool = NULL;
+    rq->proc_num = 0;
      /* LAB6: YOUR CODE 
       * (1) init the ready process list: rq->run_list
       * (2) init the run pool: rq->lab6_run_pool
@@ -58,6 +65,12 @@ stride_init(struct run_queue *rq) {
  */
 static void
 stride_enqueue(struct run_queue *rq, struct proc_struct *proc) {
+    rq->lab6_run_pool = skew_heap_insert(rq->lab6_run_pool, &(proc->lab6_run_pool), proc_stride_comp_f);
+    if (proc->time_slice == 0 || proc->time_slice > rq->max_time_slice) {
+        proc->time_slice = rq->max_time_slice;
+    }
+    proc->rq = rq;
+    rq->proc_num ++;
      /* LAB6: YOUR CODE 
       * (1) insert the proc into rq correctly
       * NOTICE: you can use skew_heap or list. Important functions
@@ -79,6 +92,8 @@ stride_enqueue(struct run_queue *rq, struct proc_struct *proc) {
  */
 static void
 stride_dequeue(struct run_queue *rq, struct proc_struct *proc) {
+    rq->lab6_run_pool = skew_heap_remove(rq->lab6_run_pool, &(proc->lab6_run_pool), proc_stride_comp_f);
+    rq->proc_num --;
      /* LAB6: YOUR CODE 
       * (1) remove the proc from rq correctly
       * NOTICE: you can use skew_heap or list. Important functions
@@ -101,6 +116,13 @@ stride_dequeue(struct run_queue *rq, struct proc_struct *proc) {
  */
 static struct proc_struct *
 stride_pick_next(struct run_queue *rq) {
+    skew_heap_entry_t* min = rq->lab6_run_pool;
+    if (min != NULL) {
+        struct proc_struct* p = le2proc(min, lab6_run_pool);
+        p->lab6_stride += BIG_STRIDE / p->lab6_priority;
+        return p;
+    }
+    return NULL;
      /* LAB6: YOUR CODE 
       * (1) get a  proc_struct pointer p  with the minimum value of stride
              (1.1) If using skew_heap, we can use le2proc get the p from rq->lab6_run_poll
@@ -121,6 +143,12 @@ stride_pick_next(struct run_queue *rq) {
 static void
 stride_proc_tick(struct run_queue *rq, struct proc_struct *proc) {
      /* LAB6: YOUR CODE */
+     if (proc->time_slice > 0) {
+        proc->time_slice --;
+    }
+    if (proc->time_slice == 0) {
+        proc->need_resched = 1;
+    }
 }
 
 struct sched_class default_sched_class = {

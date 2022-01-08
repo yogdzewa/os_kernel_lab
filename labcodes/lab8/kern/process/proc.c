@@ -90,6 +90,14 @@ static struct proc_struct *
 alloc_proc(void) {
     struct proc_struct *proc = kmalloc(sizeof(struct proc_struct));
     if (proc != NULL) {
+        memset(proc, 0, sizeof(struct proc_struct));
+        proc->state = PROC_UNINIT;
+        proc->pid = -1;
+        proc->cr3 = boot_cr3;
+        proc->lab6_priority = 1;
+        memset(&(proc->context), 0, sizeof(struct context));
+        memset(proc->name, 0, PROC_NAME_LEN);
+        list_init(&(proc->run_link));
     //LAB4:EXERCISE1 YOUR CODE
     /*
      * below fields in proc_struct need to be initialized
@@ -461,7 +469,38 @@ do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf) {
 	*    update step 1: set child proc's parent to current process, make sure current process's wait_state is 0
 	*    update step 5: insert proc_struct into hash_list && proc_list, set the relation links of process
     */
+    if ((proc = alloc_proc()) == NULL) {
+        cprintf("alloc_proc() failed!");
+        goto fork_out;
+    }
+
+    proc->parent = current;
+    assert(current->wait_state == 0);
+
+    if ((ret = setup_kstack(proc)) != 0) {  //call the alloc_pages to alloc kstack space
+        cprintf("set_kstack() failed!");
+        goto bad_fork_cleanup_proc;
+    }
+
+    if (copy_mm(clone_flags, proc) != 0) {
+        cprintf("copy_mm() failed!");
+        goto bad_fork_cleanup_kstack;
+    }
+
+    copy_thread(proc, stack, tf);
+
+    bool intr_flag;
+    local_intr_save(intr_flag);
+    {
+        proc->pid = get_pid();
+        hash_proc(proc);
+        set_links(proc);
+    }
+    local_intr_restore(intr_flag);
+
+    wakeup_proc(proc);
 	
+    ret = proc->pid;
 fork_out:
     return ret;
 

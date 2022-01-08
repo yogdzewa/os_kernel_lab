@@ -63,18 +63,18 @@ sysfile_read(int fd, void *base, size_t len) {
     if (len == 0) {
         return 0;
     }
-    if (!file_testfd(fd, 1, 0)) {
+    if (!file_testfd(fd, 1, 0)) {	///test the correctness of fd
         return -E_INVAL;
     }
-    void *buffer;
-    if ((buffer = kmalloc(IOBUF_SIZE)) == NULL) {
+    void *buffer;	///buffer is only used in here
+    if ((buffer = kmalloc(IOBUF_SIZE)) == NULL) {	///IOBUF_SIZE is 4KB
         return -E_NO_MEM;
     }
 
     int ret = 0;
-    size_t copied = 0, alen;
+    size_t copied = 0, alen;e
     while (len != 0) {
-        if ((alen = IOBUF_SIZE) > len) {
+        if ((alen = IOBUF_SIZE) > len) {	///max len is IOBUF_SIZE
             alen = len;
         }
         ret = file_read(fd, buffer, alen, &alen);

@@ -2455,7 +2455,7 @@ work(unsigned int times) {
         }
     }
 
-    yield();
+    yield();//switch to another process
   8010be:	e8 b7 f2 ff ff       	call   80037a <yield>
 
     cprintf("pid %d is running (%d times)!.\n", getpid(), times);
@@ -2691,7 +2691,7 @@ main(void) {
   80133e:	01 d0                	add    %edx,%eax
   801340:	c1 e0 02             	shl    $0x2,%eax
   801343:	89 45 e8             	mov    %eax,-0x18(%ebp)
-            work(times);
+            work(times);    //do random times
   801346:	8b 45 e8             	mov    -0x18(%ebp),%eax
   801349:	89 04 24             	mov    %eax,(%esp)
   80134c:	e8 e9 fc ff ff       	call   80103a <work>

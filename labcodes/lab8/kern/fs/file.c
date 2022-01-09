@@ -270,7 +270,7 @@ file_seek(int fd, off_t pos, int whence) {
     if ((ret = fd2file(fd, &file)) != 0) {
         return ret;
     }
-    fd_array_acquire(file);
+    fd_array_acquire(file);///用于临时打开文件
 
     switch (whence) {
     case LSEEK_SET: break;

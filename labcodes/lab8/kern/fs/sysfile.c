@@ -72,7 +72,7 @@ sysfile_read(int fd, void *base, size_t len) {
     }
 
     int ret = 0;
-    size_t copied = 0, alen;e
+    size_t copied = 0, alen;
     while (len != 0) {
         if ((alen = IOBUF_SIZE) > len) {	///max len is IOBUF_SIZE
             alen = len;

@@ -260,8 +260,9 @@ sfs_bmap_get_nolock(struct sfs_fs *sfs, struct sfs_inode *sin, uint32_t index, b
     uint32_t ent, ino;
 	// the index of disk block is in the fist SFS_NDIRECT  direct blocks
     if (index < SFS_NDIRECT) {
-        if ((ino = din->direct[index]) == 0 && create) {	//*this statement complete assigning ino 
-															//*and judge whether ino is empty && can be created
+        if ((ino = din->direct[index]) == 0 && create) {	///this statement complete assigning ino 
+															///and judge whether ino is empty && can be created
+			///下面这个函数首先空闲block的ino, 然后把sfs_buffer memset为0, 写到这个block以达到重置的效果
             if ((ret = sfs_block_alloc(sfs, &ino)) != 0) {
                 return ret;
             }
@@ -287,8 +288,8 @@ sfs_bmap_get_nolock(struct sfs_fs *sfs, struct sfs_inode *sin, uint32_t index, b
 		panic ("sfs_bmap_get_nolock - index out of range");
 	}
 out:
-    //*(Chinese is a terrible language on computer)
-	//*a simple check
+    ///(Chinese is a terrible language on computer)
+	///a simple check
 	assert(ino == 0 || sfs_block_inuse(sfs, ino));
     *ino_store = ino;	
     return 0;
@@ -556,7 +557,7 @@ static int
 sfs_io_nolock(struct sfs_fs *sfs, struct sfs_inode *sin, void *buf, off_t offset, size_t *alenp, bool write) {
     struct sfs_disk_inode *din = sin->din;
     assert(din->type != SFS_TYPE_DIR);
-    off_t endpos = offset + *alenp, blkoff;///endpos感觉恒等于4KB??
+    off_t endpos = offset + *alenp, blkoff;///endpos感觉恒等于4KB??好像不是
     *alenp = 0;
 	// calculate the Rd/Wr end position
     if (offset < 0 || offset >= SFS_MAX_FILE_SIZE || offset > endpos) {
@@ -588,7 +589,7 @@ sfs_io_nolock(struct sfs_fs *sfs, struct sfs_inode *sin, void *buf, off_t offset
 
     int ret = 0;
     size_t size, alen = 0;
-    uint32_t ino;
+    uint32_t ino; //the pointer of inode
     uint32_t blkno = offset / SFS_BLKSIZE;          // The NO. of Rd/Wr begin block ///BUFFER不都是4KB的吗??
     uint32_t nblks = endpos / SFS_BLKSIZE - blkno;  // The size of Rd/Wr blocks
 
@@ -602,6 +603,41 @@ sfs_io_nolock(struct sfs_fs *sfs, struct sfs_inode *sin, void *buf, off_t offset
      * (3) If end position isn't aligned with the last block, Rd/Wr some content from begin to the (endpos % SFS_BLKSIZE) of the last block
 	 *       NOTICE: useful function: sfs_bmap_load_nolock, sfs_buf_op	
 	*/
+    if ((blkoff = offset % SFS_BLKSIZE) != 0) {///如果在offset起始block的中间
+        size = (nblks != 0) ? (SFS_BLKSIZE - blkoff) : (endpos - offset);
+        if ((ret = sfs_bmap_load_nolock(sfs, sin, blkno, &ino)) != 0) {///取出inode编号, 也即block编号
+            goto out;
+        }
+        if ((ret = sfs_buf_op(sfs, buf, size, ino, blkoff)) != 0) {///从block和其他信息读取到buf中
+            goto out;
+        }
+        alen += size;///要增加alen
+        if (nblks == 0) {///如果只有一个block, 读/写就完成了
+            goto out;
+        }
+        buf += size, blkno++, nblks--;///否则修改一下剩余的参数
+    }
+
+    size = SFS_BLKSIZE;///使用while循环, 逐block读取, 到了剩余的整个block(nblock)等于0的时候退出
+    while (nblks != 0) {
+        if ((ret = sfs_bmap_load_nolock(sfs, sin, blkno, &ino)) != 0) {
+            goto out;
+        }
+        if ((ret = sfs_block_op(sfs, buf, ino, 1)) != 0) {
+            goto out;
+        }
+        alen += size, buf += size, blkno++, nblks--;
+    }
+
+    if ((size = endpos % SFS_BLKSIZE) != 0) {///读取最后一个block的部分区域, 这三部分基本相同只能说
+        if ((ret = sfs_bmap_load_nolock(sfs, sin, blkno, &ino)) != 0) {
+            goto out;
+        }
+        if ((ret = sfs_buf_op(sfs, buf, size, ino, 0)) != 0) {
+            goto out;
+        }
+        alen += size;
+    }
 out:
     *alenp = alen;///上面要完成alen的赋值, 即真实的读取字节数目
     if (offset + alen > sin->din->size) {///好像是用于write的

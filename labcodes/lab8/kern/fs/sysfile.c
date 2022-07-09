@@ -42,11 +42,13 @@ int
 sysfile_open(const char *__path, uint32_t open_flags) {
     int ret;
     char *path;
-    if ((ret = copy_path(&path, __path)) != 0) {
+    //use malloc to allocate a chunk of string array to @path
+    //because the original pointer points to user space.
+    if ((ret = copy_path(&path, __path)) != 0) {    
         return ret;
     }
     ret = file_open(path, open_flags);
-    kfree(path);
+    kfree(path); //avoid memory leak
     return ret;
 }
 

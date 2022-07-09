@@ -28,6 +28,7 @@ main(int argc, char *argv[]) {
         return -1;
     }
     fclose(ifp);
+    //rewrite the tail of the master block!
     buf[510] = 0x55;
     buf[511] = 0xAA;
     FILE *ofp = fopen(argv[2], "wb+");

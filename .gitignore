@@ -1,5 +1,7 @@
 .idea/*
-os/target/*
-os/.idea/*
-Cargo.lock
+.vscode
+os
 *.img
+**/obj
+**/bin
+*.7z

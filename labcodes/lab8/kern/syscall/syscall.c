@@ -157,6 +157,7 @@ sys_dup(uint32_t arg[]) {
     return sysfile_dup(fd1, fd2);
 }
 
+//syscall function pointer array.
 static int (*syscalls[])(uint32_t arg[]) = {
     [SYS_exit]              sys_exit,
     [SYS_fork]              sys_fork,

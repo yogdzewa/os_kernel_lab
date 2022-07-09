@@ -11,7 +11,7 @@ listf = $(filter $(if $(2),$(addprefix %.,$(2)),%),\
 toobj = $(addprefix $(OBJDIR)$(SLASH)$(if $(2),$(2)$(SLASH)),\
 		$(addsuffix .o,$(basename $(1))))
 
-# get .d dependency files: (#files[, packet])
+# get .d dependency files: (#files[, packet])    from name to path
 todep = $(patsubst %.o,%.d,$(call toobj,$(1),$(2)))
 
 totarget = $(addprefix $(BINDIR)$(SLASH),$(1))
@@ -59,7 +59,7 @@ define do_create_target
 __temp_target__ = $(call totarget,$(1))
 __temp_objs__ = $$(foreach p,$(call packetname,$(2)),$$($$(p))) $(3)
 TARGETS += $$(__temp_target__)
-ifneq ($(4),)
+ifneq ($(4),) 	# test if $(4) is empty
 $$(__temp_target__): $$(__temp_objs__) | $$$$(dir $$$$@)
 	$(V)$(4) $(5) $$^ -o $$@
 else

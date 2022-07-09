@@ -193,9 +193,36 @@ trap_dispatch(struct trapframe *tf)
         c = cons_getc();
         cprintf("serial [%03d] %c\n", c, c);
         break;
+    // in `trap_dispatch` of `trap.c`
     case IRQ_OFFSET + IRQ_KBD:
         c = cons_getc();
         cprintf("kbd [%03d] %c\n", c, c);
+        // 切换特权级的代码直接照抄之前编写的代码
+        if(c == '0')
+        {
+            if (tf->tf_cs != KERNEL_CS) {
+                cprintf("+++ switch to  kernel  mode +++\n");
+                tf->tf_cs = KERNEL_CS;
+                tf->tf_ds = tf->tf_es = KERNEL_DS;
+                tf->tf_eflags &= ~FL_IOPL_MASK;
+                struct trapframe *switchu2k = (struct trapframe *)(tf->tf_esp - (sizeof(struct trapframe) - 8));
+                memmove(switchu2k, tf, sizeof(struct trapframe) - 8);
+                *((uint32_t *)tf - 1) = (uint32_t)switchu2k;
+            }
+        }
+        else if(c == '3')
+        {
+            if (tf->tf_cs != USER_CS) {
+                cprintf("+++ switch to  user  mode +++\n");
+                struct trapframe switchk2u = *tf;
+                switchk2u.tf_cs = USER_CS;
+                switchk2u.tf_ds = switchk2u.tf_es = switchk2u.tf_ss = USER_DS;
+                switchk2u.tf_esp = (uint32_t)tf + sizeof(struct trapframe) - 8;
+                switchk2u.tf_eflags |= FL_IOPL_MASK;
+                *((uint32_t *)tf - 1) = (uint32_t)&switchk2u;
+            }
+        }
+
         break;
     //LAB1 CHALLENGE 1 : YOUR CODE you should modify below codes.
     case T_SWITCH_TOU:

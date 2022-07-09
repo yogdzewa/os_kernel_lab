@@ -11,6 +11,7 @@
 int
 vfs_open(char *path, uint32_t open_flags, struct inode **node_store) {
     bool can_write = 0;
+    //open_flag check
     switch (open_flags & O_ACCMODE) {
     case O_RDONLY:
         break;

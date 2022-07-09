@@ -166,6 +166,7 @@ sfs_load_inode(struct sfs_fs *sfs, struct inode **node_store, uint32_t ino) {
     }
 
     assert(sfs_block_inuse(sfs, ino));
+    //read from disk
     if ((ret = sfs_rbuf(sfs, din, sizeof(struct sfs_disk_inode), ino, 0)) != 0) {
         goto failed_cleanup_din;
     }
@@ -262,7 +263,7 @@ sfs_bmap_get_nolock(struct sfs_fs *sfs, struct sfs_inode *sin, uint32_t index, b
     if (index < SFS_NDIRECT) {
         if ((ino = din->direct[index]) == 0 && create) {	///this statement complete assigning ino 
 															///and judge whether ino is empty && can be created
-			///下面这个函数首先空闲block的ino, 然后把sfs_buffer memset为0, 写到这个block以达到重置的效果
+			///下面这个函数首先找到空闲block的idx no, 然后把sfs_buffer memset为0, 写到这个block以达到重置的效果
             if ((ret = sfs_block_alloc(sfs, &ino)) != 0) {
                 return ret;
             }
@@ -563,7 +564,7 @@ sfs_io_nolock(struct sfs_fs *sfs, struct sfs_inode *sin, void *buf, off_t offset
     if (offset < 0 || offset >= SFS_MAX_FILE_SIZE || offset > endpos) {
         return -E_INVAL;
     }
-    if (offset == endpos) {///这是怎么发生的?
+    if (offset == endpos) {
         return 0;
     }
     if (endpos > SFS_MAX_FILE_SIZE) {
@@ -577,7 +578,7 @@ sfs_io_nolock(struct sfs_fs *sfs, struct sfs_inode *sin, void *buf, off_t offset
             endpos = din->size;
         }
     }
-	///下面这几行又是什么神奇操作, 这通用接口写的也太绝了
+	
     int (*sfs_buf_op)(struct sfs_fs *sfs, void *buf, size_t len, uint32_t blkno, off_t offset);
     int (*sfs_block_op)(struct sfs_fs *sfs, void *buf, uint32_t blkno, uint32_t nblks);
     if (write) {
@@ -589,8 +590,8 @@ sfs_io_nolock(struct sfs_fs *sfs, struct sfs_inode *sin, void *buf, off_t offset
 
     int ret = 0;
     size_t size, alen = 0;
-    uint32_t ino; //the pointer of inode
-    uint32_t blkno = offset / SFS_BLKSIZE;          // The NO. of Rd/Wr begin block ///BUFFER不都是4KB的吗??
+    uint32_t ino;
+    uint32_t blkno = offset / SFS_BLKSIZE;          // The NO. of Rd/Wr begin block 
     uint32_t nblks = endpos / SFS_BLKSIZE - blkno;  // The size of Rd/Wr blocks
 
   //LAB8:EXERCISE1 YOUR CODE HINT: call sfs_bmap_load_nolock, sfs_rbuf, sfs_rblock,etc. read different kind of blocks in file

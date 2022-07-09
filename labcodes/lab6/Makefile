@@ -179,7 +179,7 @@ KSRCDIR		+= kern/init \
 			   kern/syscall
 
 KCFLAGS		+= $(addprefix -I,$(KINCLUDE))
-
+# gernerate compile templates -> add_files
 $(call add_files_cc,$(call listf_cc,$(KSRCDIR)),kernel,$(KCFLAGS))
 
 KOBJS	= $(call read_packet,kernel libs)

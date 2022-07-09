@@ -18,13 +18,13 @@ ebp:0xc0118f38 eip:0xc01009d0 args:0x00010094 0x00010094 0xc0118f68 0xc01000c4
 ebp:0xc0118f48 eip:0xc0100cd5 args:0x00000000 0x00000000 0x00000000 0xc0118fb8 
     kern/debug/kmonitor.c:129: mon_backtrace+10
 ebp:0xc0118f68 eip:0xc01000c4 args:0x00000000 0xc0118f90 0xffff0000 0xc0118f94 
-    kern/init/init.c:49: grade_backtrace2+33
+    kern/init/init.c:51: grade_backtrace2+33
 ebp:0xc0118f88 eip:0xc01000f2 args:0x00000000 0xffff0000 0xc0118fb4 0x0000002a 
-    kern/init/init.c:54: grade_backtrace1+40
+    kern/init/init.c:56: grade_backtrace1+40
 ebp:0xc0118fa8 eip:0xc0100112 args:0x00000000 0xc0100036 0xffff0000 0x0000001d 
-    kern/init/init.c:59: grade_backtrace0+23
+    kern/init/init.c:61: grade_backtrace0+23
 ebp:0xc0118fc8 eip:0xc010013a args:0xc010615c 0xc0106140 0x00000f2c 0x00000000 
-    kern/init/init.c:64: grade_backtrace+34
+    kern/init/init.c:66: grade_backtrace+34
 ebp:0xc0118ff8 eip:0xc0100087 args:0xc0106300 0xc0106308 0xc0100c59 0xc0106327 
     kern/init/init.c:29: kern_init+80
 What the fuck?memory management: default_pmm_manager

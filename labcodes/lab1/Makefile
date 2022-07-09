@@ -23,7 +23,7 @@ GCCPREFIX := $(shell if i386-elf-objdump -i 2>&1 | grep '^elf32-i386$$' >/dev/nu
 endif
 
 # try to infer the correct QEMU
-ifndef QEMU
+ifndef QEMU		# /usr/bin/qemu-system-i386
 QEMU := $(shell if which qemu-system-i386 > /dev/null; \
 	then echo 'qemu-system-i386'; exit; \
 	elif which i386-elf-qemu > /dev/null; \
@@ -145,7 +145,8 @@ $(kernel): tools/kernel.ld
 $(kernel): $(KOBJS)
 	@echo + ld $@
 	$(V)$(LD) $(LDFLAGS) -T tools/kernel.ld -o $@ $(KOBJS)
-	@$(OBJDUMP) -S $@ > $(call asmfile,kernel)
+# automaticallly dump object files.
+	@$(OBJDUMP) -S $@ > $(call asmfile,kernel)		
 	@$(OBJDUMP) -t $@ | $(SED) '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $(call symfile,kernel)
 
 $(call create_target,kernel)

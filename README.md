@@ -1,3 +1,3 @@
 # os_kernel_lab
  操作系统!
- 勉强填补一点我Github上的空白
+ 实验笔记放在[个人博客](https://yogdzewa.github.io/2021-10/Archive-ucore/)中, 够长的.
